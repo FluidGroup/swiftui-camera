@@ -1,0 +1,15 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm
+.netrc
+.claude/settings.local.json
+mise.local.toml
+.mise.local.toml
+
+# Tuist generates the demo app's project and workspace.
+/Development/*.xcodeproj
+/Development/*.xcworkspace
+/Development/Derived
