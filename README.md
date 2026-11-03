@@ -8,6 +8,37 @@ the part of the sensor under the finger.
 The library is the `Viewfinder` product. In the Simulator and in Xcode previews, the same code
 runs a simulated camera that shows a moving test pattern and delivers photos rendered from it.
 
+This capture screen shows the live preview and draws its own shutter:
+
+```swift
+import SwiftUI
+import Viewfinder
+
+struct CaptureScreen: View {
+  let onCapture: (Data) -> Void
+
+  var body: some View {
+    Camera(photo: .jpeg(quality: 0.9)) { camera in
+      ZStack(alignment: .bottom) {
+        CameraPreview(contentMode: .fill)
+        Shutter { state in
+          Circle()
+            .fill(.white)
+            .frame(width: 72, height: 72)
+            .opacity(state.isDimmed ? 0.4 : 1)
+            .scaleEffect(state.isPressed ? 0.92 : 1)
+        }
+        .padding(.bottom, 32)
+      }
+    }
+    .onPhotoCapture { photo in
+      guard let data = try? photo.data() else { return }
+      onCapture(data)
+    }
+  }
+}
+```
+
 ## Requirements
 
 - iOS 26.1 or later, or macOS 26 or later
@@ -41,43 +72,15 @@ app also needs the camera entitlement, `com.apple.security.device.camera`.
 
 ## Take a photo
 
-A screen puts its camera parts inside a `Camera` view and receives photos in `onPhotoCapture`.
-
-```swift
-import SwiftUI
-import Viewfinder
-
-struct CaptureScreen: View {
-  let onCapture: (Data) -> Void
-
-  var body: some View {
-    Camera(photo: .jpeg(quality: 0.9)) { camera in
-      ZStack(alignment: .bottom) {
-        CameraPreview(contentMode: .fill)
-        Shutter { state in
-          Circle()
-            .fill(.white)
-            .frame(width: 72, height: 72)
-            .opacity(state.isDimmed ? 0.4 : 1)
-            .scaleEffect(state.isPressed ? 0.92 : 1)
-        }
-        .padding(.bottom, 32)
-      }
-    }
-    .onPhotoCapture { photo in
-      guard let data = try? photo.data() else { return }
-      onCapture(data)
-    }
-  }
-}
-```
+A screen puts its camera parts inside a `Camera` view and receives photos in `onPhotoCapture`, as
+the example at the top of this page shows.
 
 `Camera` runs the camera while it is on screen. It asks for camera access, configures the
 session, and stops the session when the view goes away. `CameraPreview` and `Shutter` work with
 the camera of the `Camera` they're inside. Each photo arrives in the `onPhotoCapture` closure on
 the main actor, even when the screen closed before the photo finished processing.
 
-The content closure receives a `CameraProxy`, here named `camera`. It reads the camera's state
+The content closure receives a `CameraProxy`, named `camera` in the example. It reads the camera's state
 and binds manual controls. It is valid only inside its `Camera`, the way `GeometryProxy` is valid
 only inside its `GeometryReader`. `Camera` lays its content out in a `ZStack`, and the camera runs
 even while the content shows nothing, for example before the status reads
