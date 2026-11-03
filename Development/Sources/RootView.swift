@@ -4,11 +4,13 @@ import Viewfinder
 private enum Demo: Hashable, CaseIterable {
   case simple
   case pro
+  case components
 
   var title: String {
     switch self {
     case .simple: "Simple"
     case .pro: "Pro"
+    case .components: "Components"
     }
   }
 }
@@ -67,6 +69,7 @@ private struct DemoScreen: View {
     switch demo {
     case .simple: SimpleCameraScreen()
     case .pro: ProCameraScreen()
+    case .components: ComponentGalleryScreen()
     }
   }
 }
