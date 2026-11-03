@@ -6,6 +6,7 @@ final class SimulatedEngine: CameraBackend {
   private let configuration: EngineConfiguration
   private let intentBox: IntentBox
   private let events: AsyncStream<EngineEvent>.Continuation
+  private let frames: PreviewFrames
   private weak var camera: CameraModel?
 
   private var lenses: [CameraLens] = []
@@ -13,6 +14,8 @@ final class SimulatedEngine: CameraBackend {
   private var applied: DeviceIntent?
   private var readings = DeviceReadings()
   private var readingsLoop: Task<Void, Never>?
+  private var frameLoop: Task<Void, Never>?
+  private var framePool = PixelBufferPool()
   private var subjectAreaTimer: Task<Void, Never>?
   private var isRunning = false
   private var photosInFlight = 0
@@ -23,12 +26,14 @@ final class SimulatedEngine: CameraBackend {
     camera: CameraModel,
     configuration: EngineConfiguration,
     intentBox: IntentBox,
+    frames: PreviewFrames,
     events: AsyncStream<EngineEvent>.Continuation
   ) {
     self.simulation = simulation
     self.camera = camera
     self.configuration = configuration
     self.intentBox = intentBox
+    self.frames = frames
     self.events = events
   }
 
@@ -42,6 +47,7 @@ final class SimulatedEngine: CameraBackend {
       }
     }
     readingsLoop?.cancel()
+    frameLoop?.cancel()
     subjectAreaTimer?.cancel()
   }
 
@@ -57,12 +63,13 @@ final class SimulatedEngine: CameraBackend {
     if let camera {
       events.yield(.readinessTracker(SimulatedReadinessTracker(camera: camera)))
     }
-    events.yield(.preview(.testPattern))
+    events.yield(.preview(.simulated))
     isRunning = true
     reconcile(full: true)
     events.yield(.status(.available(.running)))
     events.yield(.readiness(.ready))
     startReadingsLoop()
+    startFrameLoop()
   }
 
   private func stop() async {
@@ -73,6 +80,8 @@ final class SimulatedEngine: CameraBackend {
     isRunning = false
     readingsLoop?.cancel()
     readingsLoop = nil
+    frameLoop?.cancel()
+    frameLoop = nil
     subjectAreaTimer?.cancel()
     events.yield(.readiness(.unavailable))
     events.yield(.status(.available(.stopped)))
@@ -123,6 +132,23 @@ final class SimulatedEngine: CameraBackend {
         self.stepReadings()
       }
     }
+  }
+
+  private func startFrameLoop() {
+    frameLoop?.cancel()
+    frameLoop = Task { @CaptureActor [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(33))
+        guard !Task.isCancelled, let self else { return }
+        self.deliverFrame()
+      }
+    }
+  }
+
+  private func deliverFrame() {
+    guard let connected, let buffer = framePool.buffer(width: TestPattern.frameSize.width, height: TestPattern.frameSize.height) else { return }
+    TestPattern.draw(into: buffer, phase: TestPattern.phase())
+    frames.deliver(PreviewFrame(pixelBuffer: buffer, deviceID: nil, isMirrored: connected.lens.position == .front))
   }
 
   private func stepReadings() {

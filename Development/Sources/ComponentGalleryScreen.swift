@@ -1,3 +1,4 @@
+import CoreImage
 import SwiftUI
 import Viewfinder
 
@@ -13,8 +14,11 @@ struct ComponentGalleryScreen: View {
     Camera(settings: $settings, photo: .jpeg(quality: 0.9)) { camera in
       ScrollView {
         VStack(alignment: .leading, spacing: 28) {
-          GallerySection(title: "Preview", note: "The camera the components below drive.") {
+          GallerySection(title: "Preview", note: "The camera the components below drive, with the look's Core Image filter.") {
             CameraPreview(contentMode: .fill)
+              .imageFilter { [filterName = look?.filterName] image in
+                filterName.map { image.applyingFilter($0) } ?? image
+              }
               .frame(height: 180)
               .clipShape(.rect(cornerRadius: 8))
               .padding(.horizontal, 16)

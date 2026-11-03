@@ -4,6 +4,7 @@ import AVFoundation
 final class CameraEngine: CameraBackend {
   let configuration: EngineConfiguration
   let events: AsyncStream<EngineEvent>.Continuation
+  let frames: PreviewFrames
   private let intentBox: IntentBox
   private(set) weak var camera: CameraModel?
 
@@ -30,11 +31,13 @@ final class CameraEngine: CameraBackend {
     camera: CameraModel,
     configuration: EngineConfiguration,
     intentBox: IntentBox,
+    frames: PreviewFrames,
     events: AsyncStream<EngineEvent>.Continuation
   ) {
     self.camera = camera
     self.configuration = configuration
     self.intentBox = intentBox
+    self.frames = frames
     self.events = events
   }
 
@@ -136,6 +139,11 @@ final class CameraEngine: CameraBackend {
 
     let session = AVCaptureSession()
     let photoOutput = AVCapturePhotoOutput()
+    // The previews draw from this output's frames, which the photo preset sizes for a screen.
+    let videoOutput = AVCaptureVideoDataOutput()
+    videoOutput.alwaysDiscardsLateVideoFrames = true
+    let frameOutput = PreviewFrameOutput(frames: frames)
+    videoOutput.setSampleBufferDelegate(frameOutput, queue: frameOutput.queue)
     let rig: Rig
     do {
       session.beginConfiguration()
@@ -143,6 +151,8 @@ final class CameraEngine: CameraBackend {
       session.sessionPreset = .photo
       guard session.canAddOutput(photoOutput) else { throw .cannotAddPhotoOutput }
       session.addOutput(photoOutput)
+      guard session.canAddOutput(videoOutput) else { throw .cannotAddVideoOutput }
+      session.addOutput(videoOutput)
       let input: AVCaptureDeviceInput
       do {
         input = try AVCaptureDeviceInput(device: device)
@@ -154,8 +164,9 @@ final class CameraEngine: CameraBackend {
       }
       session.addInput(input)
       prepareOutput(photoOutput, for: device)
-      rig = Rig(session: session, photoOutput: photoOutput, devices: discovery.devices, facts: facts)
+      rig = Rig(session: session, photoOutput: photoOutput, videoOutput: videoOutput, frameOutput: frameOutput, devices: discovery.devices, facts: facts)
       rig.connection = connect(lens, device: device, input: input, rig: rig)
+      prepareFrames(rig)
     }
 
     if let camera {
@@ -163,8 +174,21 @@ final class CameraEngine: CameraBackend {
     }
     observe(session)
     publishFacts(rig)
-    events.yield(.preview(.video(session: session, device: device)))
+    events.yield(.preview(.device(device)))
     return rig
+  }
+
+  /// The frames stay in the sensor's orientation and unmirrored; each preview stands them upright
+  /// itself, since only it knows its interface orientation.
+  func prepareFrames(_ rig: Rig) {
+    guard let connection = rig.videoOutput.connection(with: .video) else { return }
+    if connection.isVideoMirroringSupported {
+      connection.automaticallyAdjustsVideoMirroring = false
+      connection.isVideoMirrored = false
+    }
+    if connection.isVideoRotationAngleSupported(0) {
+      connection.videoRotationAngle = 0
+    }
   }
 
   func prepareOutput(_ photoOutput: AVCapturePhotoOutput, for device: AVCaptureDevice) {
@@ -318,6 +342,8 @@ final class CameraEngine: CameraBackend {
 final class Rig {
   let session: AVCaptureSession
   let photoOutput: AVCapturePhotoOutput
+  let videoOutput: AVCaptureVideoDataOutput
+  let frameOutput: PreviewFrameOutput
   let devices: [String: AVCaptureDevice]
   let facts: DeviceFacts
   var connection: DeviceConnection?
@@ -325,9 +351,18 @@ final class Rig {
   var controlsDelegate: ControlsDelegate?
   #endif
 
-  init(session: AVCaptureSession, photoOutput: AVCapturePhotoOutput, devices: [String: AVCaptureDevice], facts: DeviceFacts) {
+  init(
+    session: AVCaptureSession,
+    photoOutput: AVCapturePhotoOutput,
+    videoOutput: AVCaptureVideoDataOutput,
+    frameOutput: PreviewFrameOutput,
+    devices: [String: AVCaptureDevice],
+    facts: DeviceFacts
+  ) {
     self.session = session
     self.photoOutput = photoOutput
+    self.videoOutput = videoOutput
+    self.frameOutput = frameOutput
     self.devices = devices
     self.facts = facts
   }
@@ -362,12 +397,14 @@ enum ConfigurationError: Error {
   case noCamera
   case cannotAddInput(String)
   case cannotAddPhotoOutput
+  case cannotAddVideoOutput
 
   var unavailableReason: CameraStatus.UnavailableReason {
     switch self {
     case .noCamera: .noCamera
     case .cannotAddInput(let message): .configurationFailed(message)
     case .cannotAddPhotoOutput: .configurationFailed("The photo output could not be connected to the capture session.")
+    case .cannotAddVideoOutput: .configurationFailed("The preview output could not be connected to the capture session.")
     }
   }
 }

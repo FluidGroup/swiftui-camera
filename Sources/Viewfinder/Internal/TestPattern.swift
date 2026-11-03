@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -49,6 +50,31 @@ enum TestPattern {
     }
     draw(in: context, rect: CGRect(x: 0, y: 0, width: width, height: height), phase: phase)
     return context.makeImage()
+  }
+
+  /// The simulated preview's frames: upright and 3:4, like a phone held in portrait.
+  static let frameSize = (width: 720, height: 960)
+
+  /// Draws upright into a BGRA buffer, with the bars at the top as the preview shows them.
+  static func draw(into buffer: CVPixelBuffer, phase: Double) {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    let width = CVPixelBufferGetWidth(buffer)
+    let height = CVPixelBufferGetHeight(buffer)
+    guard
+      let context = CGContext(
+        data: CVPixelBufferGetBaseAddress(buffer),
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+      )
+    else { return }
+    context.translateBy(x: 0, y: Double(height))
+    context.scaleBy(x: 1, y: -1)
+    draw(in: context, rect: CGRect(x: 0, y: 0, width: width, height: height), phase: phase)
   }
 
   static func phase() -> Double {

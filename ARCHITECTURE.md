@@ -89,28 +89,50 @@ flight, the capture count, and the status. No stored copy can disagree with its 
 ## Engine to camera
 
 The engine tells the model what happened on one ordered `AsyncStream<EngineEvent>` that the
-model drains on the main actor, such as status changes, device facts, preview content, failures,
-and Camera Control adoptions. Some updates call the model on the main actor directly instead:
+model drains on the main actor, such as status changes, device facts, the preview's source,
+failures, and Camera Control adoptions. Some updates call the model on the main actor directly instead:
 photo readiness and photo progress from both backends, and on hardware, live readings and the
 system sliders' adoptions. `ReadingsCoalescer` merges the hardware readings (ISO, exposure
 duration, white-balance gains, lens position, zoom) so the main actor gets at most one update per
 turn instead of one per video frame.
+
+## The preview
+
+The session always has an `AVCaptureVideoDataOutput` beside the photo output, and every preview
+draws from its frames; there is no `AVCaptureVideoPreviewLayer`. Under the photo preset the output
+delivers screen-sized buffers, in the sensor's orientation and unmirrored. `PreviewFrameOutput`
+receives them on a queue of its own and hands each one to the camera's `PreviewFrames`, which
+passes it to every `CameraPreview` showing that camera. The simulated camera draws its test
+pattern into buffers and hands them to the same `PreviewFrames`, so the Simulator runs the same
+path.
+
+Each preview has a `PreviewSink`. On the frame queue it turns the frame upright with Core Image,
+mirrors it for the front camera, runs the app's `imageFilter`, renders into a pooled IOSurface
+buffer, and enqueues it on the preview's `AVSampleBufferDisplayLayer`, whose sample buffer
+renderer takes frames from any thread. The main actor never touches a frame, so a busy main actor
+doesn't stall the video. It only tells the sink how many quarter turns to apply, from an
+`AVCaptureDevice.RotationCoordinator` built on the preview's own layer, and which filter to run.
+
+`FrameOrientation` names the turn and the flip once. The sink renders with it, and the proxy's
+point conversion inverts it, so a focus tap lands where the frame shows.
 
 ## Concurrency boundaries
 
 `CaptureActor` is a global actor whose executor is the capture session's serial queue. Every
 AVFoundation object the library owns lives there: the session, the devices, the outputs, the
 capture rotation coordinator, and the Camera Control controls, whose actions must run on the
-session's queue. `CameraModel`, the views, the preview's rotation coordinator, and the readiness
-coordinator calls run on the main actor.
+session's queue. Preview frames are rendered on the frame queue. `CameraModel`, the views, the
+preview's rotation coordinator, and the readiness coordinator calls run on the main actor.
 
-Three types cross that boundary with `@unchecked Sendable`, and each states its invariant where
+Four types cross that boundary with `@unchecked Sendable`, and each states its invariant where
 it is declared:
 
 - `PhotoRequest` hands one press's settings to the session queue. The main actor never touches
   them after tracking starts, and the engine captures with its own copy.
-- `PreviewContent` hands the session and device to the preview layer and its rotation
-  coordinator on the main actor, which only read them. This is Apple's AVCam pattern.
+- `PreviewSource` hands the device to the preview's rotation coordinator on the main actor,
+  which only reads it. This is Apple's AVCam pattern.
+- `DisplayOutput` wraps the display layer's sample buffer renderer so the frame queue can enqueue
+  on it, which the renderer allows from a background thread.
 - `HardwareReadinessTracker` wraps the readiness coordinator, which is created on the session
   queue and used only on the main actor afterward.
 
@@ -129,13 +151,15 @@ running.
 Decisions that don't need a device are pure functions with unit tests: `ShutterMachine`,
 `ShutterDerivation`, `LensDiscovery`, `LensResolution`, `ZoomMapping`,
 `PhotoResolutionSelection`, `ExposureSteering`, the reconcile plan (`DeviceAspect`), the
-interruption mapping, the parameter scales, stops, and notation, and the `CameraSettings` rules.
-`SimulatedCameraTests` runs the whole camera through `CameraProxy` on the simulated backend, with a
+interruption mapping, the parameter scales, stops, and notation, the `CameraSettings` rules, and
+`FrameOrientation`. `PreviewFramesTests` renders frames through Core Image and checks that each
+orientation lands where the point conversion says. `SimulatedCameraTests` runs the whole camera through `CameraProxy` on the simulated backend, with a
 binding standing in for the app's settings.
 
 Behavior that depends on real hardware has no automated test. That covers lens switching and the
 rotation carried across it, Apple ProRAW output, readiness under responsive capture, priority
-exposure, Camera Control, interruptions, and the preview's point conversion. Check those on an
+exposure, Camera Control, interruptions, and the preview's rotation and frame rate on a device.
+Check those on an
 iPhone with the demo app in `Development` after changing them.
 
 ## Why photos only

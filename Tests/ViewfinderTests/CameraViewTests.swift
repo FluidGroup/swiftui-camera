@@ -2,6 +2,7 @@
 import AppKit
 import Observation
 import SwiftUI
+import Synchronization
 import Testing
 
 @testable import Viewfinder
@@ -118,6 +119,24 @@ struct CameraViewTests {
     screen.camera?.activateShutter()
     try await waitUntil { !screen.photos.isEmpty }
     #expect(screen.photos.count == 1)
+  }
+
+  @Test func aPreviewFilterRunsOnTheFramesThePreviewShows() async throws {
+    let calls = Mutex(0)
+    let window = show(
+      Camera { _ in
+        CameraPreview()
+          .imageFilter { image in
+            calls.withLock { $0 += 1 }
+            return image.applyingFilter("CIColorInvert")
+          }
+      }
+      .cameraSource(.simulated(CameraSimulation()))
+    )
+    defer { window.close() }
+
+    try await waitUntil { calls.withLock { $0 } >= 3 }
+    #expect(calls.withLock { $0 } >= 3)
   }
 
   @Test func aDifferentSettingsBindingTakesOverTheCamera() async throws {

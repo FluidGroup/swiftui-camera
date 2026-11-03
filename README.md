@@ -320,6 +320,23 @@ after a tap, the camera returns to continuous autofocus and sets `focusPoint` ba
 the focus square disappears at the same moment. A Mac camera reports no scene changes, so there
 the focus point stays until the app focuses again. Saved settings don't keep a tap.
 
+## Filter the preview with Core Image
+
+`imageFilter(_:)` runs a Core Image function on each frame before the preview shows it:
+
+```swift
+CameraPreview(contentMode: .fill)
+  .imageFilter { [intensity] image in
+    image.applyingFilter("CISepiaTone", parameters: [kCIInputIntensityKey: intensity])
+  }
+```
+
+The image arrives upright and mirrored the way the preview shows it, with its extent at the
+origin, and the result is cropped to that extent. The function runs off the main actor for every
+frame, so capture the values it reads, as `[intensity]` does here. A new function from a later
+view update applies from the next frame, so a slider can drive it. Only the preview changes:
+photos arrive as captured.
+
 ## Build controls in other views
 
 Pass a subview the values and bindings it needs, or the proxy itself:

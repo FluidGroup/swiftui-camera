@@ -6,7 +6,7 @@ enum EngineEvent: Sendable {
   case readings(DeviceReadings)
   case readiness(ShutterState.Phase)
   case readinessTracker(any ReadinessTracking)
-  case preview(PreviewContent?)
+  case preview(PreviewSource)
   case hardwareControls(HardwareControlsAppearance)
   case failure(CameraFailure)
   case subjectAreaChanged
@@ -23,23 +23,21 @@ enum IntentAdoption: Sendable, Hashable {
   case bias(ExposureBias)
 }
 
-/// What the preview shows: the session's video for a connected device, or the test pattern.
+/// Where the preview's frames come from, which tells the preview how to stand them upright: a
+/// device's frames turn with its rotation coordinator, and the simulated camera's are upright.
 ///
-/// `@unchecked Sendable`: the main actor only hands the session and device to
-/// `AVCaptureVideoPreviewLayer` and `AVCaptureDevice.RotationCoordinator`, AVCam's own pattern,
-/// and never mutates either; every mutation stays on the session queue.
-enum PreviewContent: @unchecked Sendable, Equatable {
-  case video(session: AVCaptureSession, device: AVCaptureDevice)
-  case testPattern
+/// `@unchecked Sendable`: the main actor only hands the device to
+/// `AVCaptureDevice.RotationCoordinator`, AVCam's own pattern, and never mutates it; every
+/// mutation stays on the session queue.
+enum PreviewSource: @unchecked Sendable, Equatable {
+  case device(AVCaptureDevice)
+  case simulated
 
-  static func == (lhs: PreviewContent, rhs: PreviewContent) -> Bool {
+  static func == (lhs: PreviewSource, rhs: PreviewSource) -> Bool {
     switch (lhs, rhs) {
-    case (.video(let session, let device), .video(let otherSession, let otherDevice)):
-      session === otherSession && device === otherDevice
-    case (.testPattern, .testPattern):
-      true
-    case (.video, .testPattern), (.testPattern, .video):
-      false
+    case (.device(let device), .device(let other)): device === other
+    case (.simulated, .simulated): true
+    case (.device, .simulated), (.simulated, .device): false
     }
   }
 }

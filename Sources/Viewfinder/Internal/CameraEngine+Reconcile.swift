@@ -72,22 +72,21 @@ extension CameraEngine {
       if let previous {
         session.addInput(previous.input)
         rig.connection = connect(previous.lens, device: previous.device, input: previous.input, rig: rig)
+        prepareFrames(rig)
       }
       session.commitConfiguration()
       events.yield(.failure(CameraFailure(kind: .lensSwitch, message: "The camera could not be connected to the capture session.")))
       return false
     }
     session.addInput(input)
-    // Leave the new preview connection's rotation alone here. On iOS its preview layer is a
-    // view's backing layer, which UIKit lets only the main thread change; `PreviewLayerController`
-    // applies the new device's rotation there when the preview event below arrives.
     prepareOutput(rig.photoOutput, for: device)
     rig.connection = connect(lens, device: device, input: input, rig: rig)
+    prepareFrames(rig)
     session.commitConfiguration()
 
     steering = nil
     publishFacts(rig)
-    events.yield(.preview(.video(session: session, device: device)))
+    events.yield(.preview(.device(device)))
     return true
   }
 

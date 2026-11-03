@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import SwiftUI
+import Synchronization
 import Testing
 
 @testable import Viewfinder
@@ -335,6 +336,28 @@ struct SimulatedCameraTests {
     model.sync()
     #expect(screen.settings.lens?.position == .front)
     #expect(screen.settings.zoom == ZoomFactor(1.5))
+  }
+
+  @Test func previewsGetUprightFramesMirroredOnTheFrontCamera() async throws {
+    let (_, model, camera) = makeCamera(lenses: .physical(includingCrops: true))
+    let sink = PreviewSink { _ in }
+    sink.update(turning: PreviewSink.Turning(deviceID: nil, quarterTurns: 0), filter: nil)
+    model.frames.add(sink)
+    defer { model.frames.remove(sink) }
+    let layouts = Mutex<[FrameLayout]>([])
+    let recording = Task {
+      for await layout in sink.layouts {
+        layouts.withLock { $0.append(layout) }
+      }
+    }
+    defer { recording.cancel() }
+    let run = Task { await model.run() }
+    defer { run.cancel() }
+    try await waitUntil("a frame") { !layouts.withLock { $0 }.isEmpty }
+    #expect(layouts.withLock { $0 }.first == FrameLayout(size: CGSize(width: 720, height: 960), orientation: .identity))
+
+    camera.settings.position.flip()
+    try await waitUntil("a mirrored frame") { layouts.withLock { $0 }.last?.orientation.isMirrored == true }
   }
 
   @Test func aReplacedModelNoLongerWritesTheSettings() {

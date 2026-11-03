@@ -226,7 +226,8 @@ final class CameraModel {
   @ObservationIgnored let handlers: SessionHandlers
   var allowsCapture: Bool = true
 
-  private(set) var previewContent: PreviewContent?
+  private(set) var previewSource: PreviewSource?
+  @ObservationIgnored let frames = PreviewFrames()
   @ObservationIgnored private let backend: BackendKind
   @ObservationIgnored private let configuration: EngineConfiguration
   @ObservationIgnored private let lane: CommandLane
@@ -347,9 +348,9 @@ final class CameraModel {
     let engine: any CameraBackend =
       switch backend {
       case .hardware:
-        CameraEngine(camera: self, configuration: configuration, intentBox: lane.intentBox, events: sink)
+        CameraEngine(camera: self, configuration: configuration, intentBox: lane.intentBox, frames: frames, events: sink)
       case .simulated(let simulation):
-        SimulatedEngine(simulation: simulation, camera: self, configuration: configuration, intentBox: lane.intentBox, events: sink)
+        SimulatedEngine(simulation: simulation, camera: self, configuration: configuration, intentBox: lane.intentBox, frames: frames, events: sink)
       }
     let commands = lane.commands
     engineTask = Task { @CaptureActor in
@@ -377,8 +378,8 @@ final class CameraModel {
       apply(readiness: phase)
     case .readinessTracker(let tracker):
       readinessTracker = tracker
-    case .preview(let content):
-      previewContent = content
+    case .preview(let source):
+      previewSource = source
     case .hardwareControls(let appearance):
       hardwareControlsAppearance = appearance
     case .failure(let failure):
