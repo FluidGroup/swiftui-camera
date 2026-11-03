@@ -39,7 +39,15 @@ struct ProCameraScreen: View {
             ManualControlsPanel(camera: camera)
           }
 
-          LensPicker(lenses: camera.lenses, selection: $settings.lens)
+          HStack {
+            LensPicker(lenses: camera.lenses, selection: $settings.lens)
+            if camera.canFlip {
+              Button("Flip Camera", systemImage: "arrow.triangle.2.circlepath.camera") {
+                settings.position.flip()
+              }
+              .labelStyle(.iconOnly)
+            }
+          }
 
           HStack {
             LastCaptureThumbnail(image: shots.first?.preview)
