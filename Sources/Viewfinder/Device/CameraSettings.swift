@@ -97,9 +97,9 @@ public struct CameraSettings: Sendable, Hashable, Codable {
     tapCount += 1
   }
 
-  /// Unlike the `position` and `lens` setters, keeps `zoom`: the device chose these, not a person.
-  mutating func resolve(position: CameraPosition, lens: CameraLens?) {
-    storedPosition = position
+  /// Unlike the `lens` setter, keeps `zoom`: the device chose this lens, not a person.
+  mutating func resolve(to lens: CameraLens) {
+    storedPosition = lens.position
     storedLens = lens
   }
 

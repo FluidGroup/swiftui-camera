@@ -126,7 +126,6 @@ final class CameraEngine: CameraBackend {
     let discovery = DeviceDiscovery.discover()
     let lenses = LensDiscovery.lenses(from: discovery.facts, selection: configuration.lensSelection)
     let facts = DeviceFacts(
-      positions: LensResolution.positions(of: lenses),
       lenses: lenses,
       defaultLensID: discovery.defaultID
     )

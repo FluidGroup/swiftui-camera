@@ -178,9 +178,12 @@ final class CameraModel {
       guard let lens = resolvedLens else {
         return ManualControl(value: ZoomFactor(1), range: ZoomFactor(1)...ZoomFactor(1), supportsAutomatic: false, availability: .unsupported)
       }
-      let range = ZoomMapping.displayRange(deviceRange: ranges.videoZoomFactor, lens: lens)
+      // The range and the reading come from the connected device, which during a switch is still
+      // the previous lens.
+      let connectedLens = facts.connected.flatMap { connected in facts.lenses.first { $0.id == connected.lensID } } ?? lens
+      let range = ZoomMapping.displayRange(deviceRange: ranges.videoZoomFactor, lens: connectedLens)
       let target = ZoomMapping.target(settings.zoom, lens: lens).clamped(to: range)
-      let reading = readings.videoZoomFactor.map { ZoomFactor(ZoomMapping.displayZoom(videoZoomFactor: $0, lens: lens)) }
+      let reading = readings.videoZoomFactor.map { ZoomFactor(ZoomMapping.displayZoom(videoZoomFactor: $0, lens: connectedLens)) }
       return ManualControl(
         value: target,
         range: range,
@@ -202,12 +205,12 @@ final class CameraModel {
     receive(.activate)
   }
 
-  init(configuration: EngineConfiguration, source: CameraSource, settings: Binding<CameraSettings>) {
+  init(configuration: EngineConfiguration, source: CameraSource, settings: Binding<CameraSettings>, handlers: SessionHandlers) {
     let backend = BackendKind.select(source)
     self.backend = backend
     self.configuration = configuration
     self.settingsBinding = settings
-    self.customizeSettings = configuration.photo.customizeSettings
+    self.handlers = handlers
     let intent = DeviceIntent(settings.wrappedValue)
     self.sentIntent = intent
     self.lane = CommandLane(intent: intent)
@@ -220,10 +223,8 @@ final class CameraModel {
   }
 
   @ObservationIgnored var settingsBinding: Binding<CameraSettings>
-  @ObservationIgnored var customizeSettings: (@MainActor @Sendable (AVCapturePhotoSettings) -> Void)?
+  @ObservationIgnored let handlers: SessionHandlers
   var allowsCapture: Bool = true
-  @ObservationIgnored var deliver: (@MainActor (Photo) async -> Void)?
-  @ObservationIgnored var failureAction: (@MainActor (CameraFailure) -> Void)?
 
   private(set) var previewContent: PreviewContent?
   @ObservationIgnored private let backend: BackendKind
@@ -264,13 +265,8 @@ final class CameraModel {
   }
 
   private func resolveLens() {
-    guard !facts.lenses.isEmpty else { return }
-    let position = LensResolution.position(requested: settings.position, available: facts.positions)
-    let lens =
-      settings.lens.flatMap { lens in facts.lenses.first { $0.id == lens.id && $0.position == position } }
-      ?? LensResolution.defaultLens(at: position, in: facts.lenses, preferredID: facts.defaultLensID)
-    guard position != settings.position || lens != settings.lens else { return }
-    settings.resolve(position: position, lens: lens)
+    guard let lens = resolvedLens, lens != settings.lens || lens.position != settings.position else { return }
+    settings.resolve(to: lens)
   }
 
   private func update(_ change: (inout CameraSettings) -> Void) {
@@ -299,7 +295,7 @@ final class CameraModel {
   }
 
   private func report(_ failure: CameraFailure) {
-    failureAction?(failure)
+    handlers.failureAction?(failure)
   }
 
   func run() async {
@@ -402,7 +398,7 @@ final class CameraModel {
       update { $0.lens = lens }
     case .lensSwitchFailed(let requested, let connected):
       guard settings.lens?.id == requested, let lens = facts.lenses.first(where: { $0.id == connected }) else { return }
-      update { $0.lens = lens }
+      update { $0.resolve(to: lens) }
     case .exposure(let program):
       adoptChange { $0.exposure = program }
     case .whiteBalance(let whiteBalance):
@@ -442,7 +438,7 @@ final class CameraModel {
     photosInFlight -= 1
     switch result {
     case .success(let photo):
-      guard let deliver else { return }
+      guard let deliver = handlers.deliver else { return }
       Task { @MainActor in await deliver(photo) }
     case .failure(let failure):
       report(failure)
@@ -488,7 +484,7 @@ extension CameraModel {
     )
     let tracked = shot.forTracking(lensSwitchPending: lens?.id != connected.lensID)
     let photoSettings = PhotoSettingsBuilder.settings(for: tracked, options: configuration.photo, output: connected.photo.output)
-    customizeSettings?(photoSettings)
+    handlers.customizeSettings?(photoSettings)
     let request = PhotoRequest(settings: photoSettings, shot: shot)
     readinessTracker.startTracking(request)
     photosInFlight += 1

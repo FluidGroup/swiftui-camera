@@ -1,8 +1,11 @@
 struct DeviceFacts: Sendable, Hashable {
-  var positions: [CameraPosition] = []
   var lenses: [CameraLens] = []
   var defaultLensID: CameraLens.ID?
   var connected: ConnectedDevice?
+
+  var positions: [CameraPosition] {
+    LensResolution.positions(of: lenses)
+  }
 }
 
 struct ConnectedDevice: Sendable, Hashable {

@@ -18,11 +18,14 @@ enum LensResolution {
     return fullSensor.min { abs(log($0.displayZoom)) < abs(log($1.displayZoom)) } ?? candidates.first
   }
 
+  /// The intent's lens when it's discovered at the position the intent resolves to, else that
+  /// position's default. A lens ID from another position doesn't count, so a decoded or hand-made
+  /// lens that disagrees with its position lands where the position says.
   static func lens(for intent: DeviceIntent, in lenses: [CameraLens], preferredID: CameraLens.ID? = nil) -> CameraLens? {
-    if let id = intent.lensID, let lens = lenses.first(where: { $0.id == id }) {
+    let position = position(requested: intent.position, available: positions(of: lenses))
+    if let id = intent.lensID, let lens = lenses.first(where: { $0.id == id && $0.position == position }) {
       return lens
     }
-    let position = position(requested: intent.position, available: positions(of: lenses))
     return defaultLens(at: position, in: lenses, preferredID: preferredID)
   }
 

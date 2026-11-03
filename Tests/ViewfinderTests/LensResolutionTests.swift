@@ -63,6 +63,18 @@ struct LensResolutionTests {
     #expect(LensResolution.lens(for: intent, in: []) == nil)
   }
 
+  @Test func aLensFromAnotherPositionGivesWayToThatPositionsDefault() {
+    var intent = DeviceIntent(position: .front)
+    intent.lensID = "t"
+    #expect(LensResolution.lens(for: intent, in: iPhone)?.id == "f")
+  }
+
+  @Test func aLensAtThePositionTheDeviceFallsBackToIsKept() {
+    var intent = DeviceIntent(position: .unspecified)
+    intent.lensID = "uw"
+    #expect(LensResolution.lens(for: intent, in: iPhone)?.id == "uw")
+  }
+
   @Test func anIPhoneIntentOnAMacLandsOnTheMacCamera() {
     let intent = DeviceIntent(position: .back)
     #expect(LensResolution.lens(for: intent, in: mac, preferredID: "mac")?.id == "mac")

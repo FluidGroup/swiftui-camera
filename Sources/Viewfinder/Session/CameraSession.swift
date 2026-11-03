@@ -43,7 +43,7 @@ struct CameraSession<Content: View>: View {
     .onChange(of: settings) { model.sync() }
     .onChange(of: session) {
       model.detach()
-      let next = CameraModel(configuration: configuration, source: source, settings: $settings)
+      let next = CameraModel(configuration: configuration, source: source, settings: $settings, handlers: model.handlers)
       next.allowsCapture = allowsCapture
       self.model = next
     }
@@ -52,8 +52,8 @@ struct CameraSession<Content: View>: View {
 }
 
 /// The model for the current session. SwiftUI calls `update()` before each body evaluation,
-/// which hands the model the values it reads later, when the engine, a press, or a photo needs
-/// them.
+/// which hands the model the binding and the handlers the closures. The model reads them later,
+/// when the engine, a press, or a photo needs them.
 @propertyWrapper
 struct SessionModel: DynamicProperty {
   @State private var model: CameraModel
@@ -74,7 +74,7 @@ struct SessionModel: DynamicProperty {
     customizeSettings = configuration.photo.customizeSettings
     deliver = capture?.action
     self.failureAction = failureAction
-    _model = State(initialValue: CameraModel(configuration: configuration, source: source, settings: settings))
+    _model = State(initialValue: CameraModel(configuration: configuration, source: source, settings: settings, handlers: SessionHandlers()))
   }
 
   @MainActor
@@ -86,11 +86,20 @@ struct SessionModel: DynamicProperty {
   func update() {
     MainActor.assumeIsolated {
       model.settingsBinding = settings
-      model.customizeSettings = customizeSettings
-      model.deliver = deliver
-      model.failureAction = failureAction
+      model.handlers.customizeSettings = customizeSettings
+      model.handlers.deliver = deliver
+      model.handlers.failureAction = failureAction
     }
   }
+}
+
+/// The app's closures, shared by every model of a session, so a photo or a failure that a
+/// replaced model still has in flight reaches the closure from the latest render.
+@MainActor
+final class SessionHandlers {
+  var customizeSettings: (@MainActor @Sendable (AVCapturePhotoSettings) -> Void)?
+  var deliver: (@MainActor (Photo) async -> Void)?
+  var failureAction: (@MainActor (CameraFailure) -> Void)?
 }
 
 struct CameraCapture {

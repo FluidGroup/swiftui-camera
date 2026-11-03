@@ -143,8 +143,8 @@ With a binding, the app changes the camera from its own code and compares or sav
 ```
 
 The camera writes back what changes on its side: the lens it picks for a position, a Camera
-Control adjustment, a lens switch that fails, and the end of a tap's focus. It never writes live
-readings or clamped values. A request the connected lens can't reach, such as ISO 6400 on a lens
+Control adjustment, a lens switch that fails, and the end of a tap's focus. A lens the camera
+picks keeps the `zoom` you asked for. It never writes live readings or clamped values. A request the connected lens can't reach, such as ISO 6400 on a lens
 that stops at 3200, stays in `settings`, and `camera.exposure` shows the value in effect. A lens
 that can reach it applies it again.
 

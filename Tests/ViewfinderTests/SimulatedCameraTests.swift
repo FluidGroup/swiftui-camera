@@ -13,13 +13,20 @@ struct SimulatedCameraTests {
     var settings: CameraSettings
     var photos: [Photo] = []
     var failures: [CameraFailure] = []
+    var cameraWrites = 0
 
     init(settings: CameraSettings) {
       self.settings = settings
     }
 
     var binding: Binding<CameraSettings> {
-      Binding(get: { self.settings }, set: { self.settings = $0 })
+      Binding(
+        get: { self.settings },
+        set: {
+          self.settings = $0
+          self.cameraWrites += 1
+        }
+      )
     }
   }
 
@@ -33,10 +40,11 @@ struct SimulatedCameraTests {
     let model = CameraModel(
       configuration: EngineConfiguration(photo: photo, lensSelection: lenses, mirroring: .matchesPreview, hardwareControls: []),
       source: .simulated(simulation),
-      settings: screen.binding
+      settings: screen.binding,
+      handlers: SessionHandlers()
     )
-    model.deliver = { photo in screen.photos.append(photo) }
-    model.failureAction = { failure in screen.failures.append(failure) }
+    model.handlers.deliver = { photo in screen.photos.append(photo) }
+    model.handlers.failureAction = { failure in screen.failures.append(failure) }
     return (screen, model, CameraProxy(model: model, settings: screen.binding))
   }
 
@@ -185,6 +193,68 @@ struct SimulatedCameraTests {
     camera.settings.lens = ultraWide
     model.adopt(.lensSwitchFailed(requested: telephoto.id, connected: main.id))
     #expect(screen.settings.lens == ultraWide)
+  }
+
+  @Test func aFailedLensSwitchKeepsTheZoomAskedFor() async throws {
+    let (screen, model, camera) = makeCamera(lenses: .physical(includingCrops: true), simulation: CameraSimulation())
+    let run = Task { await model.run() }
+    defer { run.cancel() }
+    try await waitUntil("running") { isRunning(camera) }
+    let (main, telephoto) = (camera.lenses[1], camera.lenses[3])
+
+    var asked = screen.settings
+    asked.lens = telephoto
+    asked.zoom = ZoomFactor(7)
+    screen.settings = asked
+    model.sync()
+    model.adopt(.lensSwitchFailed(requested: telephoto.id, connected: main.id))
+    #expect(screen.settings.lens == main)
+    #expect(screen.settings.zoom == ZoomFactor(7))
+    #expect(camera.zoom.value == ZoomFactor(6))
+  }
+
+  @Test func theZoomReadingStaysOnTheConnectedLensUntilASwitchLands() async throws {
+    let (_, model, camera) = makeCamera(lenses: .physical(includingCrops: true))
+    let run = Task { await model.run() }
+    defer { run.cancel() }
+    // Without readings the reading falls back to the target, so wait for the device's first ones.
+    try await waitUntil("the first readings") { camera.focus.reading == LensPosition(0.6) }
+    camera.zoom.value = ZoomFactor(3)
+    try await waitUntil("the zoom reading") { camera.zoom.reading == ZoomFactor(3) }
+
+    camera.settings.lens = camera.lenses[3]
+    #expect(camera.zoom.reading == ZoomFactor(3))
+    #expect(camera.zoom.range == ZoomFactor(1)...ZoomFactor(6))
+    #expect(camera.zoom.value == ZoomFactor(5))
+  }
+
+  @Test func aLensFromAnotherPositionGivesWayToThatPositionsDefault() async throws {
+    let (screen, model, camera) = makeCamera(lenses: .physical(includingCrops: true))
+    let run = Task { await model.run() }
+    defer { run.cancel() }
+    try await waitUntil("running") { isRunning(camera) }
+    let telephoto = camera.lenses[3]
+
+    screen.settings.lens = CameraLens(id: telephoto.id, position: .front, kind: .telephoto, displayZoom: 5)
+    let shown = camera.lenses
+    model.sync()
+    #expect(shown.map(\.label) == ["1×"])
+    #expect(screen.settings.position == .front)
+    #expect(screen.settings.lens.map(shown.contains) == true)
+  }
+
+  @Test func aResolvedCameraWritesNothingWhenNothingChanged() async throws {
+    let (screen, model, camera) = makeCamera(lenses: .physical(includingCrops: true))
+    let run = Task { await model.run() }
+    defer { run.cancel() }
+    try await waitUntil("running") { isRunning(camera) }
+    #expect(screen.settings.lens != nil)
+
+    screen.cameraWrites = 0
+    model.sync()
+    model.sync()
+    model.sync()
+    #expect(screen.cameraWrites == 0)
   }
 
   @Test func cameraControlWritesBackWithoutDroppingAnUnsentChangeFromTheApp() async throws {

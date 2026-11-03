@@ -22,7 +22,9 @@ Viewfinder splits a camera screen into three layers, and each one knows only the
 The model is a class, not a struct, because it has identity: one capture session, one set of
 devices, and photos in flight that outlive any single view update. A change to the session
 configuration or the source replaces the model, which restarts the session. The content keeps its
-identity, so its own state survives the restart.
+identity, so its own state survives the restart. The replaced model still finishes its photos in
+flight. Every model of a session reads the app's closures from one `SessionHandlers`, so those
+photos reach the latest `onPhotoCapture` closure.
 
 ## Every write is an intent
 
@@ -38,7 +40,10 @@ so the lane's order is still the order of what the person did.
 
 The camera writes into the settings only for what changes on its side: the lens it resolves for a
 position (with the position a device without the requested one uses), a failed lens switch, the
-end of a tap's focus, and Camera Control adjustments. It never clamps a value on its own. A request
+end of a tap's focus, and Camera Control adjustments. A lens the camera resolves keeps `zoom`,
+because the device chose that lens, not a person. The model and both engines resolve the lens with
+`LensResolution.lens(for:)`, so the lens the proxy shows before the write-back is the lens the
+engine connects. The camera never clamps a value on its own. A request
 outside the connected lens's range stays in the settings, and the getters clamp what they show. A
 write through a proxy control stores the values the control showed, which are already clamped,
 because the person set them against what they saw.

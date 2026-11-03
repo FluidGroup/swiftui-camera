@@ -98,7 +98,6 @@ final class SimulatedEngine: CameraBackend {
     events.yield(
       .facts(
         DeviceFacts(
-          positions: LensResolution.positions(of: lenses),
           lenses: lenses,
           defaultLensID: nil,
           connected: connected?.device
