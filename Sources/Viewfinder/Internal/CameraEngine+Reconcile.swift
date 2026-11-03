@@ -64,7 +64,6 @@ extension CameraEngine {
       return false
     }
     let session = rig.session
-    let previewAngle = session.connections.first { $0.videoPreviewLayer != nil }?.videoRotationAngle
 
     session.beginConfiguration()
     let previous = rig.connection
@@ -79,15 +78,9 @@ extension CameraEngine {
       return false
     }
     session.addInput(input)
-    // The new input gets a new preview connection with the default rotation. Carrying the
-    // angle over inside the transaction keeps the preview from flashing sideways until the
-    // preview's own rotation coordinator catches up.
-    if let previewAngle,
-      let newPreviewConnection = session.connections.first(where: { $0.videoPreviewLayer != nil }),
-      newPreviewConnection.isVideoRotationAngleSupported(previewAngle)
-    {
-      newPreviewConnection.videoRotationAngle = previewAngle
-    }
+    // Leave the new preview connection's rotation alone here. On iOS its preview layer is a
+    // view's backing layer, which UIKit lets only the main thread change; `PreviewLayerController`
+    // applies the new device's rotation there when the preview event below arrives.
     prepareOutput(rig.photoOutput, for: device)
     rig.connection = connect(lens, device: device, input: input, rig: rig)
     session.commitConfiguration()
