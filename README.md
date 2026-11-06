@@ -41,7 +41,7 @@ struct CaptureScreen: View {
 
 ## Requirements
 
-- iOS 26.1 or later, or macOS 26 or later
+- iOS 18 or later, or macOS 26 or later
 - Swift 6.2 or later
 
 ## Installation
@@ -51,7 +51,7 @@ the library supports:
 
 ```swift
 platforms: [
-  .iOS("26.1"),
+  .iOS(.v18),
   .macOS(.v26),
 ],
 dependencies: [

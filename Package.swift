@@ -12,7 +12,7 @@ let swiftSettings: [SwiftSetting] = [
 let package = Package(
   name: "swiftui-camera",
   platforms: [
-    .iOS("26.1"),
+    .iOS(.v18),
     .macOS(.v26),
   ],
   products: [

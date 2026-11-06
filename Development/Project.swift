@@ -20,7 +20,7 @@ let project = Project(
       product: .app,
       bundleId: "app.muukii.CameraDemo",
       deploymentTargets: .multiplatform(
-        iOS: "26.1",
+        iOS: "18.0",
         macOS: "26.0"
       ),
       infoPlist: .extendingDefault(with: [
