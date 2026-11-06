@@ -1,5 +1,5 @@
+import Camera
 import SwiftUI
-import Viewfinder
 
 private enum Demo: Hashable, CaseIterable {
   case simple
@@ -44,7 +44,7 @@ struct RootView: View {
       List(Demo.allCases, id: \.self) { demo in
         NavigationLink(demo.title, value: demo)
       }
-      .navigationTitle("Viewfinder")
+      .navigationTitle("Camera Demo")
       .toolbar { SourcePicker(choice: $sourceChoice) }
       .navigationDestination(for: Demo.self) { demo in
         DemoScreen(demo: demo, sourceChoice: $sourceChoice)

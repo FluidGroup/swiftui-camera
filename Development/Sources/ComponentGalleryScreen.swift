@@ -1,6 +1,6 @@
+import Camera
 import CoreImage
 import SwiftUI
-import Viewfinder
 
 /// The VSCO Capture components one by one, on a live camera where they need one, before a screen
 /// puts them together.
@@ -39,7 +39,7 @@ struct ComponentGalleryScreen: View {
             LookCarousel(looks: CameraLook.samples, selection: $look)
           }
 
-          GallerySection(title: "Mode switcher", note: "The first title follows the look. The modes are labels only; Viewfinder takes photos.") {
+          GallerySection(title: "Mode switcher", note: "The first title follows the look. The modes are labels only; the library takes photos.") {
             ModeSwitcher(modes: SampleMode.allCases, selection: $mode) { mode in
               mode == .photo ? look?.name ?? mode.title : mode.title
             }

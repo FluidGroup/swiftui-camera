@@ -16,16 +16,16 @@ let package = Package(
     .macOS(.v26),
   ],
   products: [
-    .library(name: "Viewfinder", targets: ["Viewfinder"])
+    .library(name: "Camera", targets: ["Camera"])
   ],
   targets: [
     .target(
-      name: "Viewfinder",
+      name: "Camera",
       swiftSettings: swiftSettings
     ),
     .testTarget(
-      name: "ViewfinderTests",
-      dependencies: ["Viewfinder"],
+      name: "CameraTests",
+      dependencies: ["Camera"],
       swiftSettings: swiftSettings
     ),
   ],

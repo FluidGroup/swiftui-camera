@@ -1,5 +1,5 @@
+import Camera
 import SwiftUI
-import Viewfinder
 
 struct CapturedShot: Identifiable {
   let id = UUID()

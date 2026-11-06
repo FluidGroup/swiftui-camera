@@ -1,11 +1,11 @@
-# How Viewfinder works
+# How swiftui-camera works
 
-This page is for the engineer who changes Viewfinder. It explains how the parts fit and why they
+This page is for the engineer who changes the library. It explains how the parts fit and why they
 are shaped this way. For how to use the package in an app, read the [README](README.md).
 
 ## Three layers
 
-Viewfinder splits a camera screen into three layers, and each one knows only the layer below it.
+The library splits a camera screen into three layers, and each one knows only the layer below it.
 
 - The device layer is `CameraSettings`, the intent as a value the app may own, and the internal
   `CameraModel`, an observable store on the main actor for everything the device reports. Apps

@@ -1,5 +1,5 @@
+import Camera
 import SwiftUI
-import Viewfinder
 
 struct SimpleCameraScreen: View {
   @State private var shots: [CapturedShot] = []

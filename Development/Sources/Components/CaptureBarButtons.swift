@@ -1,5 +1,5 @@
+import Camera
 import SwiftUI
-import Viewfinder
 
 /// Cycles the flash through off, auto, and on, as the top bar of a capture screen does. The camera
 /// resolves the mode against the lens connected at each press.
