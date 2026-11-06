@@ -1,18 +1,18 @@
 # swiftui-camera
 
-Viewfinder runs the camera behind a SwiftUI photo screen and leaves every pixel to you. You draw
-the preview frame, the shutter, and the dials. Viewfinder makes them behave like a camera's: the
+This library runs the camera behind a SwiftUI photo screen and leaves every pixel to you. You draw
+the preview frame, the shutter, and the dials. The library makes them behave like a camera's: the
 shutter follows the photo output's readiness, a dial snaps to third stops, and a tap focuses on
 the part of the sensor under the finger.
 
-The library is the `Viewfinder` product. In the Simulator and in Xcode previews, the same code
+The library is the `Camera` product. In the Simulator and in Xcode previews, the same code
 runs a simulated camera that shows a moving test pattern and delivers photos rendered from it.
 
 This capture screen shows the live preview and draws its own shutter:
 
 ```swift
+import Camera
 import SwiftUI
-import Viewfinder
 
 struct CaptureScreen: View {
   let onCapture: (Data) -> Void
@@ -46,8 +46,8 @@ struct CaptureScreen: View {
 
 ## Installation
 
-Add the package and its `Viewfinder` product. Your package's platforms must be at least the ones
-Viewfinder supports:
+Add the package and its `Camera` product. Your package's platforms must be at least the ones
+the library supports:
 
 ```swift
 platforms: [
@@ -61,7 +61,7 @@ targets: [
   .target(
     name: "YourApp",
     dependencies: [
-      .product(name: "Viewfinder", package: "swiftui-camera")
+      .product(name: "Camera", package: "swiftui-camera")
     ]
   )
 ]
@@ -105,16 +105,16 @@ Pass `PhotoOptions` to `Camera`:
 
 For a per-photo setting the presets don't cover, such as `metadata` with the location on iOS,
 set `customizeSettings`. It receives each press's `AVCapturePhotoSettings` on the main actor after
-Viewfinder fills in the format. Viewfinder resolves the flash and the size again against the
+the library fills in the format. The library resolves the flash and the size again against the
 connected lens at capture, so changes to those two don't survive. Depth, Live Photos, and constant
-color need the photo output configured for them, which Viewfinder doesn't do, so enabling them
+color need the photo output configured for them, which the library doesn't do, so enabling them
 there raises an Objective-C exception and crashes the app.
 
 A change to the photo options, the lens selection, mirroring, or the Camera Control items
 restarts the session, and the preview blanks briefly. A change to `customizeSettings` alone
 doesn't, because the camera reads it at each press.
 
-Set `settings.photoResolution` to `.standard` (about 12 MP) or `.full`. Viewfinder resolves the
+Set `settings.photoResolution` to `.standard` (about 12 MP) or `.full`. The library resolves the
 preference against the lens connected when the press reaches the photo output, so a lens tapped
 just before the shutter decides the size. To label a picker's choices, call
 `camera.photoResolution(for:)`, which returns the size each preference takes on the connected
@@ -159,7 +159,7 @@ photo. `flash` starts at `.off` for every format.
 
 A `Photo` is a file on disk plus its `format`, its `pixelSize`, and a small upright `preview`
 image. The file lives as long as `photo.file`, a `CapturedFile`. When the last reference to it goes
-away, Viewfinder deletes the file, so a dropped photo can't leak a 75 MB DNG.
+away, the library deletes the file, so a dropped photo can't leak a 75 MB DNG.
 
 To keep a photo, move the file before you release it. This example moves it into Photos:
 
@@ -415,9 +415,9 @@ To run the demo on an iPhone, pass your team when you generate:
 TUIST_DEVELOPMENT_TEAM=<your team ID> tuist generate
 ```
 
-## Change Viewfinder
+## Change the library
 
-Before you change the package, read [How Viewfinder works](ARCHITECTURE.md). Run the tests from
+Before you change the package, read [How swiftui-camera works](ARCHITECTURE.md). Run the tests from
 the repository root:
 
 ```bash

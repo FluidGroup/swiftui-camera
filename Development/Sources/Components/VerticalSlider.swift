@@ -1,5 +1,5 @@
+import Camera
 import SwiftUI
-import Viewfinder
 
 /// The strength slider VSCO Capture puts on the preview's trailing edge: the control's icon, a thin
 /// line, and a knob. It is a look for `Dial`, so a drag walks the parameter's stops with a haptic

@@ -1,7 +1,7 @@
 import ProjectDescription
 
 let project = Project(
-  name: "ViewfinderDemo",
+  name: "CameraDemo",
   packages: [
     .local(path: "..")
   ],
@@ -15,24 +15,24 @@ let project = Project(
   ),
   targets: [
     .target(
-      name: "ViewfinderDemo",
+      name: "CameraDemo",
       destinations: [.iPhone, .iPad, .mac],
       product: .app,
-      bundleId: "app.muukii.ViewfinderDemo",
+      bundleId: "app.muukii.CameraDemo",
       deploymentTargets: .multiplatform(
         iOS: "26.1",
         macOS: "26.0"
       ),
       infoPlist: .extendingDefault(with: [
-        "CFBundleDisplayName": "Viewfinder",
+        "CFBundleDisplayName": "Camera Demo",
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationCategoryType": "public.app-category.developer-tools",
-        "NSCameraUsageDescription": "The demo uses the camera to try Viewfinder.",
+        "NSCameraUsageDescription": "The demo uses the camera to try the Camera library.",
         "UILaunchScreen": .dictionary([:]),
       ]),
       buildableFolders: ["Sources"],
       dependencies: [
-        .package(product: "Viewfinder")
+        .package(product: "Camera")
       ],
       settings: .settings(
         base: [

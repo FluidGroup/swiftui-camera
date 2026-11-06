@@ -1,9 +1,9 @@
+import Camera
 import Foundation
 import SwiftUI
-import Viewfinder
 
 struct ProCameraScreen: View {
-  private static let settingsKey = "ViewfinderDemo.proCameraSettings"
+  private static let settingsKey = "CameraDemo.proCameraSettings"
 
   @State private var settings: CameraSettings
   @State private var shots: [CapturedShot] = []

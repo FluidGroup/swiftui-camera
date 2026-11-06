@@ -1,5 +1,5 @@
+import Camera
 import SwiftUI
-import Viewfinder
 
 /// The shutter row of VSCO Capture: looks scroll under a shutter that stays in the middle, and the
 /// look under the shutter is the selection. The first slot is no look, which shows a plain shutter.
