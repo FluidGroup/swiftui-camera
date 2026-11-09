@@ -1,12 +1,13 @@
 import SwiftUI
 
 /// A photo camera as a container view, the way `Map` and `ScrollView` are containers: it owns
-/// the session, draws nothing itself, and hands its content a `CameraProxy`.
+/// the session, draws nothing itself, and hands its content a `CameraProxy`, the one way the
+/// content reaches the camera.
 ///
 /// ```swift
 /// Camera(photo: .jpeg(quality: 0.9)) { camera in
-///   CameraPreview(contentMode: .fill)
-///   Shutter { state in MyShutter(state: state) }
+///   CameraPreview(camera, contentMode: .fill)
+///   Shutter(camera) { state in MyShutter(state: state) }
 /// }
 /// .onPhotoCapture { photo in save(photo) }
 /// ```
@@ -14,10 +15,9 @@ import SwiftUI
 /// It lays its content out in a `ZStack`, so controls stack over the preview. The camera runs
 /// while the view is on screen, even while the content shows nothing. When the view disappears,
 /// the session stops after a start still in flight and after every photo that began has reached
-/// `onPhotoCapture`. `CameraPreview`, `Shutter`, and hardware buttons work with the camera of the
-/// `Camera` they're inside.
+/// `onPhotoCapture`. Hardware buttons press this camera's shutter.
 ///
-/// The session configuration (`photo`, `lenses`, `mirroring`, `hardwareControls`) and the
+/// The session configuration (`photo`, `lenses`, `mirroring`, `cameraControl`) and the
 /// `.cameraSource(_:)` above it are fixed for a session: a change restarts it. A change to
 /// `photo.customizeSettings` alone doesn't, because the camera reads it at each press. Everything
 /// a person changes while shooting lives in `CameraSettings`, which the camera keeps itself unless
@@ -32,15 +32,19 @@ public struct Camera<Content: View>: View {
   private var failureAction: (@MainActor (CameraFailure) -> Void)?
 
   /// A camera that keeps its own settings, starting from `CameraSettings()`.
+  ///
+  /// - Parameter cameraControl: The items on Camera Control (iPhone 16 and later), in the order
+  ///   they appear. A device skips what it can't offer. Pressing Camera Control takes a photo with
+  ///   or without them.
   public init(
     photo: PhotoOptions = .heif,
     lenses: LensSelection = .wide,
     mirroring: Mirroring = .matchesPreview,
-    hardwareControls: [HardwareControl] = [],
+    cameraControl: [CameraControlItem] = [],
     @ViewBuilder content: @escaping (CameraProxy) -> Content
   ) {
     self.settings = nil
-    self.configuration = EngineConfiguration(photo: photo, lensSelection: lenses, mirroring: mirroring, hardwareControls: hardwareControls)
+    self.configuration = EngineConfiguration(photo: photo, lensSelection: lenses, mirroring: mirroring, cameraControl: cameraControl)
     self.content = content
   }
 
@@ -49,16 +53,20 @@ public struct Camera<Content: View>: View {
   /// The camera writes back what changes on its side, such as a Camera Control adjustment or
   /// the lens it picks for a position. A change the app makes reaches the device at the next
   /// view update, and a press sends the latest value before it captures.
+  ///
+  /// - Parameter cameraControl: The items on Camera Control (iPhone 16 and later), in the order
+  ///   they appear. A device skips what it can't offer. Pressing Camera Control takes a photo with
+  ///   or without them.
   public init(
     settings: Binding<CameraSettings>,
     photo: PhotoOptions = .heif,
     lenses: LensSelection = .wide,
     mirroring: Mirroring = .matchesPreview,
-    hardwareControls: [HardwareControl] = [],
+    cameraControl: [CameraControlItem] = [],
     @ViewBuilder content: @escaping (CameraProxy) -> Content
   ) {
     self.settings = settings
-    self.configuration = EngineConfiguration(photo: photo, lensSelection: lenses, mirroring: mirroring, hardwareControls: hardwareControls)
+    self.configuration = EngineConfiguration(photo: photo, lensSelection: lenses, mirroring: mirroring, cameraControl: cameraControl)
     self.content = content
   }
 

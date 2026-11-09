@@ -15,7 +15,7 @@ struct ComponentGalleryScreen: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 28) {
           GallerySection(title: "Preview", note: "The camera the components below drive, with the look's Core Image filter.") {
-            CameraPreview(contentMode: .fill)
+            CameraPreview(camera, contentMode: .fill)
               .imageFilter { [filterName = look?.filterName] image in
                 filterName.map { image.applyingFilter($0) } ?? image
               }
@@ -36,7 +36,7 @@ struct ComponentGalleryScreen: View {
           }
 
           GallerySection(title: "Look carousel", note: "\(look?.name ?? "No look") under the shutter. Photos taken: \(photoCount).") {
-            LookCarousel(looks: CameraLook.samples, selection: $look)
+            LookCarousel(camera: camera, looks: CameraLook.samples, selection: $look)
           }
 
           GallerySection(title: "Mode switcher", note: "The first title follows the look. The modes are labels only; the library takes photos.") {

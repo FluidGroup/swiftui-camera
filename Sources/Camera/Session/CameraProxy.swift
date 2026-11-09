@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// What `Camera` hands its content. Read the camera's state directly, or bind a control with `$`,
-/// as in `Slider(value: camera.$exposure.iso.position)`. Every binding writes `settings` and
-/// reaches the device at once.
+/// The camera, as `Camera` hands it to its content. Pass it to `CameraPreview` and `Shutter`, read
+/// its state directly, or bind a control with `$`, as in
+/// `Slider(value: camera.$exposure.iso.position)`. Every binding writes `settings` and reaches the
+/// device at once.
 ///
 /// Valid only inside the `Camera` that made it, like `GeometryProxy`.
 @MainActor
@@ -47,8 +48,8 @@ public struct CameraProxy {
   public var shutter: ShutterState {
     model.shutter
   }
-  public var hardwareControlsAppearance: HardwareControlsAppearance {
-    model.hardwareControlsAppearance
+  public var cameraControlAppearance: CameraControlAppearance {
+    model.cameraControlAppearance
   }
 
   /// The size a press takes for `preference` on the connected lens, so a picker can label each

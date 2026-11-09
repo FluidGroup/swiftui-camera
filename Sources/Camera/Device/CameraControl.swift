@@ -1,6 +1,6 @@
-/// Camera Control (the hardware slider) entries, in dial order. Each one mirrors the on-screen
-/// control of the same name in both directions.
-public enum HardwareControl: Sendable, Hashable {
+/// What Camera Control, the capture button on the side of iPhone 16 and later, can offer. Each item
+/// stays in sync with `CameraSettings` in both directions.
+public enum CameraControlItem: Sendable, Hashable {
   case lensPicker
   case zoom
   case exposureBias
@@ -11,7 +11,7 @@ public enum HardwareControl: Sendable, Hashable {
 }
 
 /// What Camera Control is doing, so the app can hide the chrome it covers.
-public enum HardwareControlsAppearance: Sendable, Hashable {
+public enum CameraControlAppearance: Sendable, Hashable {
   case inactive
   case active
   /// `sessionControlsWillEnterFullscreenAppearance`: hide on-screen sliders. Fade the shutter

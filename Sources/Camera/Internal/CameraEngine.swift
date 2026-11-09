@@ -233,9 +233,7 @@ final class CameraEngine: CameraBackend {
     observers.append(
       center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak self] note in
         let error = note.userInfo?[AVCaptureSessionErrorKey] as? NSError
-        let code = error?.code
-        let message = error?.localizedDescription ?? "The capture session reported an error."
-        Task { @CaptureActor in self?.sessionRuntimeError(code: code, message: message) }
+        Task { @CaptureActor in self?.sessionRuntimeError(error) }
       })
   }
 
@@ -253,9 +251,9 @@ final class CameraEngine: CameraBackend {
     events.yield(.status(.available(.running)))
   }
 
-  private func sessionRuntimeError(code: Int?, message: String) {
+  private func sessionRuntimeError(_ error: NSError?) {
     guard isStarted, let rig else { return }
-    switch RuntimeErrorPolicy.response(toErrorCode: code) {
+    switch RuntimeErrorPolicy.response(toErrorCode: error?.code) {
     case .restart:
       if !rig.session.isRunning {
         rig.session.startRunning()
@@ -263,16 +261,22 @@ final class CameraEngine: CameraBackend {
       reconcile(full: true)
       events.yield(.status(.available(.running)))
     case .report:
-      events.yield(.failure(CameraFailure(kind: .deviceConfiguration, message: message)))
+      let message = error?.localizedDescription ?? "The capture session reported an error."
+      events.yield(.failure(CameraFailure(kind: .deviceConfiguration, message: message, underlyingError: error)))
     }
   }
 
   private func capture(_ request: PhotoRequest) {
-    guard
-      isStarted, let rig, let connection = rig.connection, let camera, rig.session.isRunning,
-      let videoConnection = rig.photoOutput.connection(with: .video)
-    else {
-      couldNotStart(request, "The camera is not running.")
+    guard isStarted, let rig, let connection = rig.connection, let camera else {
+      couldNotStart(request, "The camera has not finished starting.")
+      return
+    }
+    guard rig.session.isRunning else {
+      couldNotStart(request, "The capture session is not running.")
+      return
+    }
+    guard let videoConnection = rig.photoOutput.connection(with: .video) else {
+      couldNotStart(request, "The photo output has no video connection.")
       return
     }
     // A lens swap queued ahead of this press may have landed on another camera, so the output
@@ -302,7 +306,7 @@ final class CameraEngine: CameraBackend {
       videoConnection.isVideoMirrored = shot.isMirrored
     }
 
-    let delegate = PhotoCaptureDelegate(shot: shot, uniqueID: settings.uniqueID, camera: camera) { [weak self] uniqueID, progress in
+    let delegate = PhotoCaptureDelegate(shot: shot, snapshot: request.snapshot, uniqueID: settings.uniqueID, camera: camera) { [weak self] uniqueID, progress in
       Task { @CaptureActor in self?.captureDidProgress(uniqueID, progress) }
     }
     inFlight[settings.uniqueID] = delegate
@@ -312,7 +316,7 @@ final class CameraEngine: CameraBackend {
 
   private func couldNotStart(_ request: PhotoRequest, _ message: String) {
     Task { @MainActor [camera] in
-      camera?.captureCouldNotStart(trackedID: request.trackedID, message: message)
+      camera?.captureCouldNotStart(trackedID: request.trackedID, message: message, snapshot: request.snapshot)
     }
   }
 
@@ -377,7 +381,7 @@ final class DeviceConnection {
   let readings: DeviceReadingsMonitor
   var subjectAreaObserver: (any NSObjectProtocol)?
   var controls: [AVCaptureControl] = []
-  var controlSliders = HardwareSliders()
+  var controlSliders = CameraControlSliders()
 
   init(lens: CameraLens, device: AVCaptureDevice, input: AVCaptureDeviceInput, readings: DeviceReadingsMonitor) {
     self.lens = lens

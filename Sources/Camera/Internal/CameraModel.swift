@@ -30,7 +30,7 @@ final class CameraModel {
       captureCount: captureCount
     )
   }
-  private(set) var hardwareControlsAppearance: HardwareControlsAppearance = .inactive
+  private(set) var cameraControlAppearance: CameraControlAppearance = .inactive
   var photoFormat: PhotoFormat? {
     facts.connected?.photo.format
   }
@@ -380,8 +380,8 @@ final class CameraModel {
       readinessTracker = tracker
     case .preview(let source):
       previewSource = source
-    case .hardwareControls(let appearance):
-      hardwareControlsAppearance = appearance
+    case .cameraControlAppearance(let appearance):
+      cameraControlAppearance = appearance
     case .failure(let failure):
       report(failure)
     case .subjectAreaChanged:
@@ -446,9 +446,9 @@ final class CameraModel {
     }
   }
 
-  func captureCouldNotStart(trackedID: Int64, message: String) {
+  func captureCouldNotStart(trackedID: Int64, message: String, snapshot: CameraFailure.Snapshot) {
     readinessTracker?.stopTracking(uniqueID: trackedID)
-    photoDidFinish(.failure(CameraFailure(kind: .photoCapture, message: message)))
+    photoDidFinish(.failure(CameraFailure(kind: .photoCapture, message: message, snapshot: snapshot)))
   }
 }
 
@@ -472,7 +472,11 @@ extension CameraModel {
   /// flips synchronously and a queued touch can't fire a second capture.
   private func capturePhoto() {
     sync()
-    guard let connected = facts.connected, let readinessTracker else { return }
+    let snapshot = self.snapshot
+    guard let connected = facts.connected, let readinessTracker else {
+      report(CameraFailure(kind: .photoCapture, message: "The camera has no connected lens to capture with.", snapshot: snapshot))
+      return
+    }
     let settings = settings
     let lens = resolvedLens
     let shot = PhotoShot(
@@ -486,10 +490,24 @@ extension CameraModel {
     let tracked = shot.forTracking(lensSwitchPending: lens?.id != connected.lensID)
     let photoSettings = PhotoSettingsBuilder.settings(for: tracked, options: configuration.photo, output: connected.photo.output)
     handlers.customizeSettings?(photoSettings)
-    let request = PhotoRequest(settings: photoSettings, shot: shot)
+    let request = PhotoRequest(settings: photoSettings, shot: shot, snapshot: snapshot)
     readinessTracker.startTracking(request)
     photosInFlight += 1
     lane.send(.capturePhoto(request))
+  }
+
+  private var snapshot: CameraFailure.Snapshot {
+    CameraFailure.Snapshot(
+      settings: settings,
+      lens: facts.connected.flatMap { connected in facts.lenses.first { $0.id == connected.lensID } },
+      format: photoFormat,
+      resolution: photoResolution(for: settings.photoResolution),
+      exposure: exposure,
+      whiteBalance: whiteBalance,
+      focus: focus,
+      zoom: zoom,
+      shutter: shutter
+    )
   }
 }
 

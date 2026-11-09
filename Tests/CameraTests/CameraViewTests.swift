@@ -18,6 +18,7 @@ struct CameraViewTests {
     var customizedGenerations: [Int] = []
     var photoGenerations: [Int] = []
     var failureGenerations: [Int] = []
+    var shutterCaptureCount = 0
   }
 
   @MainActor
@@ -66,6 +67,38 @@ struct CameraViewTests {
       }
       .cameraSource(.simulated(CameraSimulation()))
     }
+  }
+
+  /// Changing `driver.jpeg` restarts the session under the same preview and shutter.
+  private struct PartsHost: View {
+    let driver: Driver
+    let screen: Screen
+    let onFrame: @Sendable () -> Void
+
+    var body: some View {
+      Camera(photo: driver.jpeg ? .jpeg(quality: 0.8) : .heif) { camera in
+        let _ = (screen.camera = camera)
+        CameraPreview(camera)
+          .imageFilter { image in
+            onFrame()
+            return image
+          }
+        Shutter(camera) { state in
+          let _ = (screen.shutterCaptureCount = state.captureCount)
+          Color.clear
+        }
+      }
+      .onPhotoCapture { _ in }
+      .cameraSource(.simulated(CameraSimulation(processingDelay: .milliseconds(30))))
+    }
+  }
+
+  private func restartSession(of driver: Driver, on screen: Screen) async throws {
+    try await waitUntil { screen.camera?.shutter.isEnabled == true }
+    let replaced = try #require(screen.camera?.model)
+    driver.jpeg = false
+    try await waitUntil { screen.camera?.model !== replaced }
+    try await waitUntil { screen.camera?.shutter.isEnabled == true }
   }
 
   private func show(_ view: some View) -> NSWindow {
@@ -124,8 +157,8 @@ struct CameraViewTests {
   @Test func aPreviewFilterRunsOnTheFramesThePreviewShows() async throws {
     let calls = Mutex(0)
     let window = show(
-      Camera { _ in
-        CameraPreview()
+      Camera { camera in
+        CameraPreview(camera)
           .imageFilter { image in
             calls.withLock { $0 += 1 }
             return image.applyingFilter("CIColorInvert")
@@ -137,6 +170,29 @@ struct CameraViewTests {
 
     try await waitUntil { calls.withLock { $0 } >= 3 }
     #expect(calls.withLock { $0 } >= 3)
+  }
+
+  @Test func aPreviewShowsTheNewCameraAfterTheSessionRestarts() async throws {
+    let (driver, screen) = (Driver(), Screen())
+    let frames = Mutex(0)
+    let window = show(PartsHost(driver: driver, screen: screen) { frames.withLock { $0 += 1 } })
+    defer { window.close() }
+
+    try await restartSession(of: driver, on: screen)
+    frames.withLock { $0 = 0 }
+    try await waitUntil { frames.withLock { $0 } >= 3 }
+    #expect(frames.withLock { $0 } >= 3)
+  }
+
+  @Test func aShutterShowsTheNewCameraAfterTheSessionRestarts() async throws {
+    let (driver, screen) = (Driver(), Screen())
+    let window = show(PartsHost(driver: driver, screen: screen) {})
+    defer { window.close() }
+
+    try await restartSession(of: driver, on: screen)
+    screen.camera?.activateShutter()
+    try await waitUntil { screen.shutterCaptureCount == 1 }
+    #expect(screen.shutterCaptureCount == 1)
   }
 
   @Test func aDifferentSettingsBindingTakesOverTheCamera() async throws {

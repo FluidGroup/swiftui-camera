@@ -35,7 +35,7 @@ extension CameraEngine {
         }
       }
     } catch {
-      events.yield(.failure(CameraFailure(kind: .deviceConfiguration, message: error.localizedDescription)))
+      events.yield(.failure(CameraFailure(kind: .deviceConfiguration, error: error)))
     }
     applied = intent
     syncControls(with: intent, connection: connection)
@@ -60,7 +60,7 @@ extension CameraEngine {
     do {
       input = try AVCaptureDeviceInput(device: device)
     } catch {
-      events.yield(.failure(CameraFailure(kind: .lensSwitch, message: error.localizedDescription)))
+      events.yield(.failure(CameraFailure(kind: .lensSwitch, error: error)))
       return false
     }
     let session = rig.session

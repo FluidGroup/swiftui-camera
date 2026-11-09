@@ -32,7 +32,7 @@ struct EngineConfiguration: Sendable {
   let photo: PhotoOptions
   let lensSelection: LensSelection
   let mirroring: Mirroring
-  let hardwareControls: [HardwareControl]
+  let cameraControl: [CameraControlItem]
 }
 
 @CaptureActor

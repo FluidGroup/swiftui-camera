@@ -20,13 +20,13 @@ struct ProCameraScreen: View {
       settings: $settings,
       photo: .appleProRAW(fallback: .heif),
       lenses: .physical(includingCrops: true),
-      hardwareControls: [.lensPicker, .exposureBias]
+      cameraControl: [.lensPicker, .exposureBias]
     ) { camera in
       ScrollView {
         VStack(spacing: 16) {
           CaptureOptionsBar(camera: camera, resolution: $settings.photoResolution)
 
-          CameraPreview(contentMode: .fit) { preview in
+          CameraPreview(camera, contentMode: .fit) { preview in
             FocusLayer(preview: preview, settings: $settings)
           }
           .aspectRatio(3 / 4, contentMode: .fit)
@@ -52,7 +52,7 @@ struct ProCameraScreen: View {
           HStack {
             LastCaptureThumbnail(image: shots.first?.preview)
             Spacer()
-            Shutter { state in
+            Shutter(camera) { state in
               ProShutter(state: state)
             }
             Spacer()
@@ -215,7 +215,7 @@ private struct ManualControlsPanel: View {
       ManualControlRow(title: "Tint", control: camera.$whiteBalance.tint)
       ManualControlRow(title: "Focus", control: camera.$focus)
     }
-    .opacity(camera.hardwareControlsAppearance == .fullscreen ? 0 : 1)
+    .opacity(camera.cameraControlAppearance == .fullscreen ? 0 : 1)
   }
 }
 

@@ -46,10 +46,34 @@ public struct CameraFailure: Error, Sendable, Hashable, Identifiable {
   public let id: UUID
   public let kind: Kind
   public let message: String
+  /// The system error behind the failure, when there is one, such as an `AVError`. `message` is
+  /// often just its generic description, so log this to see the code and any underlying errors.
+  public let underlyingError: (any Error)?
+  /// The camera at the press of the photo that failed. `nil` for a failure that isn't a photo
+  /// capture.
+  public let snapshot: Snapshot?
 
-  public init(kind: Kind, message: String) {
+  public init(kind: Kind, message: String, underlyingError: (any Error)? = nil) {
+    self.init(kind: kind, message: message, underlyingError: underlyingError, snapshot: nil)
+  }
+
+  init(kind: Kind, message: String, underlyingError: (any Error)? = nil, snapshot: Snapshot?) {
     self.id = UUID()
     self.kind = kind
     self.message = message
+    self.underlyingError = underlyingError
+    self.snapshot = snapshot
+  }
+
+  init(kind: Kind, error: any Error, snapshot: Snapshot? = nil) {
+    self.init(kind: kind, message: error.localizedDescription, underlyingError: error, snapshot: snapshot)
+  }
+
+  public static func == (lhs: CameraFailure, rhs: CameraFailure) -> Bool {
+    lhs.id == rhs.id
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(id)
   }
 }

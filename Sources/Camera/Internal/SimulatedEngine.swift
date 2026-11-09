@@ -163,7 +163,7 @@ final class SimulatedEngine: CameraBackend {
   private func capture(_ request: PhotoRequest) {
     guard isRunning, let camera, let connected else {
       Task { @MainActor [camera] in
-        camera?.captureCouldNotStart(trackedID: request.trackedID, message: "The camera is not running.")
+        camera?.captureCouldNotStart(trackedID: request.trackedID, message: "The camera is not running.", snapshot: request.snapshot)
       }
       return
     }
@@ -173,12 +173,13 @@ final class SimulatedEngine: CameraBackend {
     let options = configuration.photo
     let photo = connected.device.photo
     let shot = request.shot.resolved(flashModes: photo.output.flashModes, offered: photo.resolutions, ceiling: photo.output.maxDimensions)
+    let snapshot = request.snapshot
     Task { @CaptureActor [weak self, events] in
       try? await Task.sleep(for: .milliseconds(80))
       await camera.photoWillCapture()
       events.yield(.readiness(.busy(.processing)))
       try? await Task.sleep(for: delay)
-      let result = SimulatedPhoto.make(shot: shot, options: options, phase: phase)
+      let result = SimulatedPhoto.make(shot: shot, options: options, phase: phase, snapshot: snapshot)
       self?.captureDidFinish()
       await camera.photoDidFinish(result)
     }

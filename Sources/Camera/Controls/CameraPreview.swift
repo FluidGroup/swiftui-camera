@@ -16,17 +16,20 @@ import AppKit
 ///
 /// `overlay` is laid out in the preview's own coordinate space and receives a proxy for
 /// converting between view points and device points.
-///
-/// It shows the camera of the `Camera` it's inside.
 public struct CameraPreview<Overlay: View>: View {
-  @Environment(CameraModel.self) private var camera: CameraModel?
   @State private var host = PreviewHost()
   @State private var size: CGSize = .zero
+  private let camera: CameraModel
   private let contentMode: ContentMode
   private let overlay: (CameraPreviewProxy) -> Overlay
   private var filter: (@Sendable (CIImage) -> CIImage)?
 
-  public init(contentMode: ContentMode = .fit, @ViewBuilder overlay: @escaping (CameraPreviewProxy) -> Overlay) {
+  public init(
+    _ camera: CameraProxy,
+    contentMode: ContentMode = .fit,
+    @ViewBuilder overlay: @escaping (CameraPreviewProxy) -> Overlay
+  ) {
+    self.camera = camera.model
     self.contentMode = contentMode
     self.overlay = overlay
   }
@@ -46,14 +49,9 @@ public struct CameraPreview<Overlay: View>: View {
   }
 
   public var body: some View {
-    if let camera {
-      PreviewLayerView(frames: camera.frames, source: camera.previewSource, gravity: gravity, filter: filter, host: host)
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
-        .overlay { overlay(proxy) }
-    } else {
-      Color.black
-        .onAppear { reportMissingScope("CameraPreview") }
-    }
+    PreviewLayerView(frames: camera.frames, source: camera.previewSource, gravity: gravity, filter: filter, host: host)
+      .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+      .overlay { overlay(proxy) }
   }
 
   private var gravity: AVLayerVideoGravity {
@@ -79,8 +77,8 @@ public struct CameraPreview<Overlay: View>: View {
 }
 
 extension CameraPreview where Overlay == EmptyView {
-  public init(contentMode: ContentMode = .fit) {
-    self.init(contentMode: contentMode) { _ in EmptyView() }
+  public init(_ camera: CameraProxy, contentMode: ContentMode = .fit) {
+    self.init(camera, contentMode: contentMode) { _ in EmptyView() }
   }
 }
 

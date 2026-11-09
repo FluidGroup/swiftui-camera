@@ -7,7 +7,7 @@ enum EngineEvent: Sendable {
   case readiness(ShutterState.Phase)
   case readinessTracker(any ReadinessTracking)
   case preview(PreviewSource)
-  case hardwareControls(HardwareControlsAppearance)
+  case cameraControlAppearance(CameraControlAppearance)
   case failure(CameraFailure)
   case subjectAreaChanged
   case adopt(IntentAdoption)

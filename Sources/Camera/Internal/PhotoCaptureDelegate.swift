@@ -3,6 +3,7 @@ import ImageIO
 
 final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
   private let shot: PhotoShot
+  private let snapshot: CameraFailure.Snapshot
   private let uniqueID: Int64
   private let camera: CameraModel
   private let progress: @Sendable (Int64, CaptureProgress) -> Void
@@ -11,8 +12,15 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
   private var pixelSize: CGSize = .zero
   private var processingError: (any Error)?
 
-  init(shot: PhotoShot, uniqueID: Int64, camera: CameraModel, progress: @escaping @Sendable (Int64, CaptureProgress) -> Void) {
+  init(
+    shot: PhotoShot,
+    snapshot: CameraFailure.Snapshot,
+    uniqueID: Int64,
+    camera: CameraModel,
+    progress: @escaping @Sendable (Int64, CaptureProgress) -> Void
+  ) {
     self.shot = shot
+    self.snapshot = snapshot
     self.uniqueID = uniqueID
     self.camera = camera
     self.progress = progress
@@ -68,7 +76,7 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
       if let fileURL {
         try? FileManager.default.removeItem(at: fileURL)
       }
-      result = .failure(CameraFailure(kind: .photoCapture, message: error.localizedDescription))
+      result = .failure(CameraFailure(kind: .photoCapture, error: error, snapshot: snapshot))
     } else if let fileURL {
       result = .success(
         Photo(
@@ -78,7 +86,7 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
           preview: preview
         ))
     } else {
-      result = .failure(CameraFailure(kind: .photoCapture, message: CaptureFailure.missingPhotoData.localizedDescription))
+      result = .failure(CameraFailure(kind: .photoCapture, message: CaptureFailure.missingPhotoData.localizedDescription, snapshot: snapshot))
     }
     Task { @MainActor [camera] in camera.photoDidFinish(result) }
     progress(uniqueID, .finished)

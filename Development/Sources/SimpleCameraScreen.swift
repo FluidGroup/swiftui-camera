@@ -11,7 +11,7 @@ struct SimpleCameraScreen: View {
         ZStack(alignment: .bottom) {
           switch camera.status {
           case .available:
-            CameraPreview(contentMode: .fill)
+            CameraPreview(camera, contentMode: .fill)
             HStack(spacing: 40) {
               if camera.canFlip {
                 Button("Flip Camera", systemImage: "arrow.triangle.2.circlepath.camera") {
@@ -21,7 +21,7 @@ struct SimpleCameraScreen: View {
                 .font(.title2)
                 .foregroundStyle(.white)
               }
-              Shutter { state in
+              Shutter(camera) { state in
                 SimpleShutter(state: state)
               }
             }
