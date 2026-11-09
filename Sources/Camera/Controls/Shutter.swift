@@ -9,21 +9,21 @@ import SwiftUI
 /// Switch Control, labeled "Take Photo". It plays a light impact at each exposure.
 ///
 /// Gate capture with `onPhotoCapture(isEnabled:perform:)`, not `.disabled`, so hardware buttons
-/// follow the same rule. It presses the camera of the `Camera` it's inside; outside one it reads
-/// `.unavailable` and ignores presses.
+/// follow the same rule.
 public struct Shutter<Label: View>: View {
-  @Environment(CameraModel.self) private var camera: CameraModel?
+  private let camera: CameraModel
   private let label: (ShutterState) -> Label
   @GestureState private var isTouching = false
   @State private var isTrackingTouch = false
   @State private var size: CGSize = .zero
 
-  public init(@ViewBuilder label: @escaping (ShutterState) -> Label) {
+  public init(_ camera: CameraProxy, @ViewBuilder label: @escaping (ShutterState) -> Label) {
+    self.camera = camera.model
     self.label = label
   }
 
   public var body: some View {
-    let state = camera?.shutter ?? ShutterState(phase: .unavailable)
+    let state = camera.shutter
     return label(state)
       .contentShape(.rect)
       .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
@@ -35,12 +35,12 @@ public struct Shutter<Label: View>: View {
           .onChanged { _ in
             guard isTrackingTouch == false else { return }
             isTrackingTouch = true
-            camera?.receive(.press(.touch))
+            camera.receive(.press(.touch))
           }
           .onEnded { value in
             isTrackingTouch = false
             let isInside = CGRect(origin: .zero, size: size).contains(value.location)
-            camera?.receive(isInside ? .release(.touch) : .cancel(.touch))
+            camera.receive(isInside ? .release(.touch) : .cancel(.touch))
           }
       )
       .onChange(of: isTouching) { _, isTouching in
@@ -49,21 +49,18 @@ public struct Shutter<Label: View>: View {
         // so a normal end releases first in either delivery order; the machine then ignores
         // this cancel because the touch no longer owns the press.
         isTrackingTouch = false
-        Task { @MainActor [camera] in camera?.receive(.cancel(.touch)) }
-      }
-      .onAppear {
-        if camera == nil { reportMissingScope("Shutter") }
+        Task { @MainActor [camera] in camera.receive(.cancel(.touch)) }
       }
       .onDisappear {
         // Leaving the hierarchy mid-touch ends the gesture with neither `onEnded` nor a state
         // reset.
         isTrackingTouch = false
-        camera?.receive(.cancel(.touch))
+        camera.receive(.cancel(.touch))
       }
       .accessibilityElement(children: .ignore)
       .accessibilityAddTraits(.isButton)
       .accessibilityLabel(Text("Take Photo"))
-      .accessibilityAction { camera?.receive(.activate) }
+      .accessibilityAction { camera.receive(.activate) }
       .sensoryFeedback(.impact(weight: .light), trigger: state.captureCount)
   }
 }

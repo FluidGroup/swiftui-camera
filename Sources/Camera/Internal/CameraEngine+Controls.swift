@@ -1,17 +1,17 @@
 import AVFoundation
 
-struct HardwareSliders {
-  var iso: HardwareSlider?
-  var shutterSpeed: HardwareSlider?
-  var whiteBalance: HardwareSlider?
-  var focus: HardwareSlider?
+struct CameraControlSliders {
+  var iso: CameraControlSlider?
+  var shutterSpeed: CameraControlSlider?
+  var whiteBalance: CameraControlSlider?
+  var focus: CameraControlSlider?
   var lensPicker: AVCaptureIndexPicker?
   var lensesInPicker: [CameraLens] = []
 }
 
 /// A slider and its span: the stops sit inside the device range, so a target clamped to that
 /// range can still fall outside what the slider accepts.
-struct HardwareSlider {
+struct CameraControlSlider {
   let slider: AVCaptureSlider
   let span: ClosedRange<Float>
 
@@ -35,7 +35,7 @@ extension CameraEngine {
   func installControls(on connection: DeviceConnection, rig: Rig) {
     #if os(iOS)
     let session = rig.session
-    guard session.supportsControls, !configuration.hardwareControls.isEmpty else { return }
+    guard session.supportsControls, !configuration.cameraControl.isEmpty else { return }
     if session.controlsDelegate == nil {
       rig.controlsDelegate = ControlsDelegate(events: events) { [weak self] in
         Task { @CaptureActor in self?.syncControlsWithDevice() }
@@ -46,12 +46,12 @@ extension CameraEngine {
     let lens = connection.lens
     let facts = DeviceDiscovery.connectedDevice(lens: lens, device: device, photoOutput: rig.photoOutput, options: configuration.photo, resolutions: resolutions(of: device))
     let queue = CaptureActor.shared.queue
-    var sliders = HardwareSliders()
+    var sliders = CameraControlSliders()
     var controls: [AVCaptureControl] = []
 
-    for entry in configuration.hardwareControls.prefix(session.maxControlsCount) {
+    for item in configuration.cameraControl.prefix(session.maxControlsCount) {
       let control: AVCaptureControl
-      switch entry {
+      switch item {
       case .zoom:
         guard facts.support.zoom else { continue }
         control = AVCaptureSystemZoomSlider(device: device) { [weak camera, weak self] factor in
@@ -83,18 +83,18 @@ extension CameraEngine {
         let values = ISO.stops(in: facts.ranges.iso).map { Float($0.rawValue) }
         let slider = AVCaptureSlider("ISO", symbolName: "camera.aperture", values: values)
         slider.setActionQueue(queue) { [weak self] value in
-          Task { @CaptureActor in self?.hardwareControlDidSet(iso: ISO(Double(value))) }
+          Task { @CaptureActor in self?.cameraControlDidSet(iso: ISO(Double(value))) }
         }
-        sliders.iso = HardwareSlider(slider, values: values)
+        sliders.iso = CameraControlSlider(slider, values: values)
         control = slider
       case .shutterSpeed:
         guard facts.support.customExposure else { continue }
         let values = ShutterSpeed.stops(in: facts.ranges.shutterSpeed).map { Float($0.rawValue) }
         let slider = AVCaptureSlider("Shutter", symbolName: "camera.shutter.button", values: values)
         slider.setActionQueue(queue) { [weak self] value in
-          Task { @CaptureActor in self?.hardwareControlDidSet(shutterSpeed: ShutterSpeed(Double(value))) }
+          Task { @CaptureActor in self?.cameraControlDidSet(shutterSpeed: ShutterSpeed(Double(value))) }
         }
-        sliders.shutterSpeed = HardwareSlider(slider, values: values)
+        sliders.shutterSpeed = CameraControlSlider(slider, values: values)
         control = slider
       case .whiteBalance:
         guard facts.support.whiteBalanceLock else { continue }
@@ -102,17 +102,17 @@ extension CameraEngine {
         let slider = AVCaptureSlider("White Balance", symbolName: "thermometer.medium", values: values)
         slider.localizedValueFormat = "%@K"
         slider.setActionQueue(queue) { [weak self] value in
-          Task { @CaptureActor in self?.hardwareControlDidSet(temperature: Kelvin(Double(value))) }
+          Task { @CaptureActor in self?.cameraControlDidSet(temperature: Kelvin(Double(value))) }
         }
-        sliders.whiteBalance = HardwareSlider(slider, values: values)
+        sliders.whiteBalance = CameraControlSlider(slider, values: values)
         control = slider
       case .focus:
         guard facts.support.lensPositionLock else { continue }
         let slider = AVCaptureSlider("Focus", symbolName: "scope", in: 0...1)
         slider.setActionQueue(queue) { [weak self] value in
-          Task { @CaptureActor in self?.hardwareControlDidSet(lensPosition: LensPosition(Double(value))) }
+          Task { @CaptureActor in self?.cameraControlDidSet(lensPosition: LensPosition(Double(value))) }
         }
-        sliders.focus = HardwareSlider(slider, values: [0, 1])
+        sliders.focus = CameraControlSlider(slider, values: [0, 1])
         control = slider
       }
       guard session.canAddControl(control) else { continue }
@@ -131,7 +131,7 @@ extension CameraEngine {
       session.removeControl(control)
     }
     connection.controls = []
-    connection.controlSliders = HardwareSliders()
+    connection.controlSliders = CameraControlSliders()
     #endif
   }
 
@@ -177,11 +177,11 @@ extension CameraEngine {
   #endif
 
   #if os(iOS)
-  private func hardwareControlDidSet(iso: ISO) {
+  private func cameraControlDidSet(iso: ISO) {
     adoptExposure(intent.exposure.fixing(iso: iso))
   }
 
-  private func hardwareControlDidSet(shutterSpeed: ShutterSpeed) {
+  private func cameraControlDidSet(shutterSpeed: ShutterSpeed) {
     adoptExposure(intent.exposure.fixing(shutterSpeed: shutterSpeed))
   }
 
@@ -192,7 +192,7 @@ extension CameraEngine {
     events.yield(.adopt(.exposure(program)))
   }
 
-  private func hardwareControlDidSet(temperature: Kelvin) {
+  private func cameraControlDidSet(temperature: Kelvin) {
     var next = deviceIntent
     let tint: Tint = if case .locked(_, let tint) = next.whiteBalance { tint } else { Tint(0) }
     next.whiteBalance = .locked(temperature, tint)
@@ -200,7 +200,7 @@ extension CameraEngine {
     events.yield(.adopt(.whiteBalance(next.whiteBalance)))
   }
 
-  private func hardwareControlDidSet(lensPosition: LensPosition) {
+  private func cameraControlDidSet(lensPosition: LensPosition) {
     var next = deviceIntent
     next.focus = .locked(lensPosition)
     applyAdopted(next)
@@ -229,19 +229,19 @@ final class ControlsDelegate: NSObject, AVCaptureSessionControlsDelegate {
 
   func sessionControlsDidBecomeActive(_ session: AVCaptureSession) {
     didBecomeActive()
-    events.yield(.hardwareControls(.active))
+    events.yield(.cameraControlAppearance(.active))
   }
 
   func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {
-    events.yield(.hardwareControls(.fullscreen))
+    events.yield(.cameraControlAppearance(.fullscreen))
   }
 
   func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {
-    events.yield(.hardwareControls(.active))
+    events.yield(.cameraControlAppearance(.active))
   }
 
   func sessionControlsDidBecomeInactive(_ session: AVCaptureSession) {
-    events.yield(.hardwareControls(.inactive))
+    events.yield(.cameraControlAppearance(.inactive))
   }
 }
 #endif

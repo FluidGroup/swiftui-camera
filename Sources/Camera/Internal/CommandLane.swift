@@ -58,10 +58,12 @@ struct PhotoShot: Sendable, Hashable {
 final class PhotoRequest: @unchecked Sendable {
   let settings: AVCapturePhotoSettings
   let shot: PhotoShot
+  let snapshot: CameraFailure.Snapshot
 
-  init(settings: AVCapturePhotoSettings, shot: PhotoShot) {
+  init(settings: AVCapturePhotoSettings, shot: PhotoShot, snapshot: CameraFailure.Snapshot) {
     self.settings = settings
     self.shot = shot
+    self.snapshot = snapshot
   }
 
   var trackedID: Int64 {

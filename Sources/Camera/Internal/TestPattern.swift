@@ -85,10 +85,10 @@ enum TestPattern {
 enum SimulatedPhoto {
   static let orientation = CGImagePropertyOrientation.right
 
-  static func make(shot: PhotoShot, options: PhotoOptions, phase: Double) -> Result<Photo, CameraFailure> {
+  static func make(shot: PhotoShot, options: PhotoOptions, phase: Double, snapshot: CameraFailure.Snapshot) -> Result<Photo, CameraFailure> {
     let sensor = shot.dimensions ?? PhotoResolution(width: 4032, height: 3024)
     guard let image = TestPattern.image(width: sensor.width, height: sensor.height, phase: phase, mirrored: shot.isMirrored) else {
-      return .failure(CameraFailure(kind: .photoCapture, message: "The simulated photo could not be rendered."))
+      return .failure(CameraFailure(kind: .photoCapture, message: "The simulated photo could not be rendered.", snapshot: snapshot))
     }
     let format: PhotoFormat = shot.format == .jpeg ? .jpeg : .heif
     do {
@@ -102,7 +102,7 @@ enum SimulatedPhoto {
           preview: UprightImage.make(image, orientation: orientation, maxLongSide: PhotoSettingsBuilder.previewLongSide)
         ))
     } catch {
-      return .failure(CameraFailure(kind: .photoCapture, message: error.localizedDescription))
+      return .failure(CameraFailure(kind: .photoCapture, error: error, snapshot: snapshot))
     }
   }
 

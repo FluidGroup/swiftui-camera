@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -39,7 +40,7 @@ struct SimulatedCameraTests {
   ) -> (Screen, CameraModel, CameraProxy) {
     let screen = Screen(settings: settings)
     let model = CameraModel(
-      configuration: EngineConfiguration(photo: photo, lensSelection: lenses, mirroring: .matchesPreview, hardwareControls: []),
+      configuration: EngineConfiguration(photo: photo, lensSelection: lenses, mirroring: .matchesPreview, cameraControl: []),
       source: .simulated(simulation),
       settings: screen.binding,
       handlers: SessionHandlers()
@@ -284,6 +285,57 @@ struct SimulatedCameraTests {
     #expect(camera.focus.isAutomatic)
   }
 
+  @Test func aPressTheCameraCannotServeReportsAFailure() {
+    let (screen, model, camera) = makeCamera()
+    model.apply(.status(.available(.running)))
+    model.apply(.readiness(.ready))
+    #expect(camera.shutter.isEnabled)
+
+    camera.activateShutter()
+
+    #expect(screen.failures.map(\.kind) == [.photoCapture])
+    #expect(camera.shutter.photosInFlight == 0)
+  }
+
+  @Test func aFailedPressKeepsTheCameraAsItWasAtThePress() throws {
+    let (screen, model, camera) = makeCamera()
+    model.apply(.status(.available(.running)))
+    model.apply(.readiness(.ready))
+    model.apply(.readings(DeviceReadings(iso: ISO(3200), shutterSpeed: ShutterSpeed(1 / 15))))
+    camera.settings.flash = .on
+
+    camera.activateShutter()
+    camera.settings.flash = .off
+
+    let snapshot = try #require(screen.failures.first?.snapshot)
+    #expect(snapshot.settings.flash == .on)
+    #expect(snapshot.exposure.iso.reading == ISO(3200))
+    #expect(snapshot.exposure.shutterSpeed.reading == ShutterSpeed(1 / 15))
+    #expect(snapshot.shutter.photosInFlight == 0)
+  }
+
+  @Test func eitherWhiteBalanceAutoToggleReturnsBothToAutomatic() async throws {
+    let (screen, model, camera) = makeCamera()
+    let run = Task { await model.run() }
+    defer { run.cancel() }
+    try await waitUntil("running") { isRunning(camera) }
+
+    camera.whiteBalance.temperature.value = Kelvin(4000)
+    try await waitUntil("the locked reading") { camera.whiteBalance.temperature.reading == Kelvin(4000) }
+
+    camera.whiteBalance.temperature.isAutomatic = true
+    #expect(screen.settings.whiteBalance == .automatic)
+    #expect(camera.whiteBalance.tint.isAutomatic)
+    try await waitUntil("the automatic reading") { camera.whiteBalance.temperature.reading == Kelvin(5200) }
+
+    camera.whiteBalance.tint.value = Tint(10)
+    #expect(screen.settings.whiteBalance != .automatic)
+
+    camera.whiteBalance.tint.isAutomatic = true
+    #expect(screen.settings.whiteBalance == .automatic)
+    #expect(camera.whiteBalance.temperature.isAutomatic)
+  }
+
   @Test func aRequestOutsideTheLensRangeStaysAsAsked() async throws {
     let (screen, model, camera) = makeCamera()
     let run = Task { await model.run() }
@@ -373,6 +425,24 @@ struct SimulatedCameraTests {
     let failure = CameraFailure(kind: .lensSwitch, message: "The lens could not be connected.")
     model.apply(.failure(failure))
     #expect(screen.failures == [failure])
+  }
+
+  @Test func aFailureKeepsTheSystemErrorBehindIt() throws {
+    let (screen, model, _) = makeCamera()
+    let cause = NSError(domain: NSOSStatusErrorDomain, code: -16800)
+    let error = NSError(
+      domain: AVFoundationErrorDomain,
+      code: AVError.Code.unknown.rawValue,
+      userInfo: [NSLocalizedDescriptionKey: "The operation could not be completed", NSUnderlyingErrorKey: cause]
+    )
+
+    model.apply(.failure(CameraFailure(kind: .photoCapture, error: error)))
+
+    let failure = try #require(screen.failures.first)
+    #expect(failure.message == "The operation could not be completed")
+    #expect((failure.underlyingError as? AVError)?.code == .unknown)
+    let reported = try #require(failure.underlyingError) as NSError
+    #expect((reported.userInfo[NSUnderlyingErrorKey] as? NSError)?.code == -16800)
   }
 
   @Test func aPressDoesNotOutliveTheSessionItBeganIn() async throws {

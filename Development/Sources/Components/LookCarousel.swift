@@ -5,8 +5,9 @@ import SwiftUI
 /// look under the shutter is the selection. The first slot is no look, which shows a plain shutter.
 ///
 /// Swipe the looks on either side, or tap one to bring it under the shutter. A drag that starts on
-/// the shutter presses it instead of scrolling. Put it inside a `Camera`, like `Shutter`.
+/// the shutter presses it instead of scrolling.
 struct LookCarousel: View {
+  let camera: CameraProxy
   let looks: [CameraLook]
   @Binding var selection: CameraLook?
 
@@ -40,7 +41,7 @@ struct LookCarousel: View {
     }
     .frame(height: shutterSize)
     .overlay {
-      Shutter { state in
+      Shutter(camera) { state in
         LookShutter(state: state, look: selection)
       }
       .frame(width: shutterSize, height: shutterSize)
@@ -120,8 +121,8 @@ private struct LookShutter: View {
 
 #Preview("Look carousel on a simulated camera") {
   @Previewable @State var look: CameraLook?
-  Camera { _ in
-    LookCarousel(looks: CameraLook.samples, selection: $look)
+  Camera { camera in
+    LookCarousel(camera: camera, looks: CameraLook.samples, selection: $look)
   }
   .onPhotoCapture { _ in }
   .cameraSource(.simulated(CameraSimulation()))

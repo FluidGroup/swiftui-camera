@@ -9,15 +9,16 @@ The library splits a camera screen into three layers, and each one knows only th
 
 - The device layer is `CameraSettings`, the intent as a value the app may own, and the internal
   `CameraModel`, an observable store on the main actor for everything the device reports. Apps
-  see the model only through `CameraProxy`, which reads its state (`status`, `lenses`, `shutter`)
-  and binds manual controls, so stock SwiftUI controls bind to it.
+  see the model only through `CameraProxy`, which stands in for the camera. It reads the model's
+  state (`status`, `lenses`, `shutter`) and binds manual controls, so stock SwiftUI controls bind
+  to it.
 - The session layer is the `Camera` view. It runs one `CameraModel` per session,
-  hands its content a `CameraProxy`, puts the model in the environment for the parts, routes the
-  hardware shutter buttons, and delivers photos and failures.
+  hands its content a `CameraProxy`, routes the hardware shutter buttons, and delivers photos and
+  failures.
 - The control layer is `CameraPreview`, `Shutter`, and `Dial`. They own behavior and draw nothing.
-  `CameraPreview` and `Shutter` find the model in the environment and render as an unavailable
-  camera without one, so a misplaced part logs a fault in debug builds instead of crashing. `Dial`
-  drives a binding, usually one from the proxy.
+  `CameraPreview` and `Shutter` take the proxy and keep its model. Everything reaches the camera
+  through the proxy, so there is one route to it. The proxy's initializer is internal, so a part
+  outside a `Camera` doesn't compile. `Dial` drives a binding, usually one from the proxy.
 
 The model is a class, not a struct, because it has identity: one capture session, one set of
 devices, and photos in flight that outlive any single view update. A change to the session

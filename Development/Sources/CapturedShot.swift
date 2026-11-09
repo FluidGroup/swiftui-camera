@@ -56,8 +56,24 @@ extension View {
     ) { _ in
       Button("OK") {}
     } message: { failure in
-      Text(failure.message)
+      Text([failure.message, failure.snapshot?.summary, failure.underlyingError.map { "\($0)" }].compactMap(\.self).joined(separator: "\n\n"))
     }
+  }
+}
+
+extension CameraFailure.Snapshot {
+  var summary: String {
+    [
+      [format?.label, resolution.map { "\($0.width)×\($0.height)" }, lens?.label].compactMap(\.self).joined(separator: " · "),
+      [describe(exposure.iso), describe(exposure.shutterSpeed), "bias " + describe(exposure.bias)].joined(separator: " · "),
+      ["focus " + describe(focus), describe(whiteBalance.temperature), "tint " + describe(whiteBalance.tint)].joined(separator: " · "),
+      ["zoom " + describe(zoom), "\(shutter.photosInFlight) in flight"].joined(separator: " · "),
+    ].joined(separator: "\n")
+  }
+
+  private func describe<Parameter>(_ control: ManualControl<Parameter>) -> String {
+    let words: [String?] = [control.reading.formatted(), control.isAutomatic ? "auto" : nil, control.isAdjusting ? "adjusting" : nil]
+    return words.compactMap(\.self).joined(separator: " ")
   }
 }
 

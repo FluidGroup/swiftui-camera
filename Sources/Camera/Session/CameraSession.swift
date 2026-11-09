@@ -1,6 +1,5 @@
 import AVKit
 import SwiftUI
-import os
 
 struct CameraSession<Content: View>: View {
   @Binding var settings: CameraSettings
@@ -37,7 +36,6 @@ struct CameraSession<Content: View>: View {
     return ZStack {
       content(CameraProxy(model: model, settings: $settings))
     }
-    .environment(model)
     .task(id: ObjectIdentifier(model)) { await model.run() }
     .onChange(of: allowsCapture, initial: true) { model.allowsCapture = allowsCapture }
     .onChange(of: settings) { model.sync() }
@@ -111,14 +109,14 @@ private struct SessionKey: Hashable {
   let encoding: PhotoOptions.Encoding
   let lensSelection: LensSelection
   let mirroring: Mirroring
-  let hardwareControls: [HardwareControl]
+  let cameraControl: [CameraControlItem]
   let source: CameraSource
 
   init(configuration: EngineConfiguration, source: CameraSource) {
     encoding = configuration.photo.encoding
     lensSelection = configuration.lensSelection
     mirroring = configuration.mirroring
-    hardwareControls = configuration.hardwareControls
+    cameraControl = configuration.cameraControl
     self.source = source
   }
 }
@@ -147,16 +145,3 @@ struct HardwareShutterEvents: ViewModifier {
     #endif
   }
 }
-
-@MainActor
-func reportMissingScope(_ part: String) {
-  #if DEBUG
-  guard reportedMissingScopeParts.insert(part).inserted else { return }
-  Logger(subsystem: "app.muukii.swiftui-camera", category: "Scope")
-    .fault("\(part, privacy: .public) has no camera. Put it inside a Camera view's content.")
-  #endif
-}
-
-#if DEBUG
-@MainActor private var reportedMissingScopeParts: Set<String> = []
-#endif

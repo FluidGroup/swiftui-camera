@@ -20,8 +20,8 @@ struct CaptureScreen: View {
   var body: some View {
     Camera(photo: .jpeg(quality: 0.9)) { camera in
       ZStack(alignment: .bottom) {
-        CameraPreview(contentMode: .fill)
-        Shutter { state in
+        CameraPreview(camera, contentMode: .fill)
+        Shutter(camera) { state in
           Circle()
             .fill(.white)
             .frame(width: 72, height: 72)
@@ -76,13 +76,14 @@ A screen puts its camera parts inside a `Camera` view and receives photos in `on
 the example at the top of this page shows.
 
 `Camera` runs the camera while it is on screen. It asks for camera access, configures the
-session, and stops the session when the view goes away. `CameraPreview` and `Shutter` work with
-the camera of the `Camera` they're inside. Each photo arrives in the `onPhotoCapture` closure on
-the main actor, even when the screen closed before the photo finished processing.
+session, and stops the session when the view goes away. Each photo arrives in the
+`onPhotoCapture` closure on the main actor, even when the screen closed before the photo finished
+processing.
 
-The content closure receives a `CameraProxy`, named `camera` in the example. It reads the camera's state
-and binds manual controls. It is valid only inside its `Camera`, the way `GeometryProxy` is valid
-only inside its `GeometryReader`. `Camera` lays its content out in a `ZStack`, and the camera runs
+The content closure receives a `CameraProxy`, named `camera` in the example. It stands in for the
+camera. Pass it to `CameraPreview` and `Shutter`, read the camera's state from it, and bind manual
+controls through it. It is valid only inside its `Camera`, the way `GeometryProxy` is valid only
+inside its `GeometryReader`. `Camera` lays its content out in a `ZStack`, and the camera runs
 even while the content shows nothing, for example before the status reads
 `.available(.running)`.
 
@@ -205,7 +206,7 @@ Switch on `camera.status` to choose what the screen shows:
 Camera { camera in
   switch camera.status {
   case .available:
-    CameraPreview(contentMode: .fill)
+    CameraPreview(camera, contentMode: .fill)
   case .accessDenied:
     ContentUnavailableView("Camera Access Is Off", systemImage: "camera")
   case .unavailable:
@@ -220,6 +221,15 @@ in state to show an alert:
 ```swift
 .onFailure { failure in self.failure = failure }
 ```
+
+`message` can be as generic as the system's own description. When the system reported an error,
+`underlyingError` holds it. Log it to see the code and any underlying errors, or cast it with
+`failure.underlyingError as? AVError`.
+
+A failed photo also carries `snapshot`: the camera at the press, as the proxy showed it then. It
+has the settings, the lens, the format and size, each control's target and reading, and the
+photos still in flight. Log it too. A capture that fails only in some scenes shows the readings
+it failed at.
 
 To ask for camera access before the capture screen, for example during onboarding, call
 `CameraAuthorization.request()`.
@@ -299,7 +309,7 @@ Dial(camera.$exposure.iso, pointsPerStop: 14) { dial in
 `CameraPreviewProxy`, which converts between view points and device points:
 
 ```swift
-CameraPreview(contentMode: .fit) { preview in
+CameraPreview(camera, contentMode: .fit) { preview in
   Color.clear
     .contentShape(.rect)
     .onTapGesture { location in
@@ -325,7 +335,7 @@ the focus point stays until the app focuses again. Saved settings don't keep a t
 `imageFilter(_:)` runs a Core Image function on each frame before the preview shows it:
 
 ```swift
-CameraPreview(contentMode: .fill)
+CameraPreview(camera, contentMode: .fill)
   .imageFilter { [intensity] image in
     image.applyingFilter("CISepiaTone", parameters: [kCIInputIntensityKey: intensity])
   }
@@ -358,8 +368,8 @@ struct LensPicker: View {
 ```
 
 Inside the content, write `LensPicker(lenses: camera.lenses, selection: $settings.lens)`. A view
-that takes plain values needs no camera in a preview. `CameraPreview` and `Shutter` placed
-outside every `Camera` render as an unavailable camera and log a fault in debug builds.
+that takes plain values needs no camera in a preview. A view that holds `CameraPreview` or
+`Shutter` takes the proxy, so its preview puts it inside a `Camera`.
 
 ## Use Camera Control
 
@@ -367,14 +377,15 @@ To put controls on Camera Control (iPhone 16 and later), list them in `Camera`'s
 the order they appear:
 
 ```swift
-Camera(photo: .appleProRAW(fallback: .heif), hardwareControls: [.lensPicker, .exposureBias]) { camera in
+Camera(photo: .appleProRAW(fallback: .heif), cameraControl: [.lensPicker, .exposureBias]) { camera in
   // ...
 }
 ```
 
-Each one stays in sync with the on-screen control of the same name, and a change made on Camera
+A device skips what it can't offer. Pressing Camera Control takes a photo with or without them.
+Each item stays in sync with the on-screen control of the same name, and a change made on Camera
 Control is written back to the settings. When Camera Control shows its full-screen overlay,
-`camera.hardwareControlsAppearance` is `.fullscreen`. Hide the sliders the overlay duplicates.
+`camera.cameraControlAppearance` is `.fullscreen`. Hide the sliders the overlay duplicates.
 
 ## Preview looks without a camera
 
