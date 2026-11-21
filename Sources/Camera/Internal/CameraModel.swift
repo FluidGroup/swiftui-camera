@@ -205,9 +205,10 @@ final class CameraModel {
     receive(.activate)
   }
 
-  init(configuration: EngineConfiguration, source: CameraSource, settings: Binding<CameraSettings>, handlers: SessionHandlers) {
+  init(configuration: EngineConfiguration, source: CameraSource, settings: Binding<CameraSettings>, handlers: SessionHandlers, simulationHardware: CameraHardware = .simulated) {
     let backend = BackendKind.select(source)
     self.backend = backend
+    self.simulationHardware = simulationHardware
     self.configuration = configuration
     self.settingsBinding = settings
     self.handlers = handlers
@@ -228,12 +229,14 @@ final class CameraModel {
 
   private(set) var previewSource: PreviewSource?
   @ObservationIgnored let frames = PreviewFrames()
+  @ObservationIgnored private let simulationHardware: CameraHardware
   @ObservationIgnored private let backend: BackendKind
   @ObservationIgnored private let configuration: EngineConfiguration
   @ObservationIgnored private let lane: CommandLane
   @ObservationIgnored private var sentIntent: DeviceIntent
   @ObservationIgnored private var readinessTracker: (any ReadinessTracking)?
   @ObservationIgnored private var engineTask: Task<Void, Never>?
+  @ObservationIgnored private var hardwareRequest: CameraRequest?
   @ObservationIgnored private var activeRuns = 0
   @ObservationIgnored private var isStarted = false
 
@@ -301,10 +304,14 @@ final class CameraModel {
 
   func run() async {
     if case .unavailable = status { return }
+    let request = hardwareRequest ?? CameraRequest()
+    hardwareRequest = request
     activeRuns += 1
     defer {
       activeRuns -= 1
       if activeRuns == 0 {
+        request.cancel()
+        hardwareRequest = nil
         if isStarted {
           isStarted = false
           machine = ShutterMachine.State()
@@ -330,7 +337,7 @@ final class CameraModel {
         status = .available(.starting)
         startEngineIfNeeded()
         sync()
-        lane.send(.start)
+        lane.send(.start(request))
       }
     }
     await untilCancelled()
@@ -350,7 +357,7 @@ final class CameraModel {
       case .hardware:
         CameraEngine(camera: self, configuration: configuration, intentBox: lane.intentBox, frames: frames, events: sink)
       case .simulated(let simulation):
-        SimulatedEngine(simulation: simulation, camera: self, configuration: configuration, intentBox: lane.intentBox, frames: frames, events: sink)
+        SimulatedEngine(simulation: simulation, hardware: simulationHardware, camera: self, configuration: configuration, intentBox: lane.intentBox, frames: frames, events: sink)
       }
     let commands = lane.commands
     engineTask = Task { @CaptureActor in

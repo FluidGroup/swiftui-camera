@@ -43,7 +43,8 @@ struct SimulatedCameraTests {
       configuration: EngineConfiguration(photo: photo, lensSelection: lenses, mirroring: .matchesPreview, cameraControl: []),
       source: .simulated(simulation),
       settings: screen.binding,
-      handlers: SessionHandlers()
+      handlers: SessionHandlers(),
+      simulationHardware: CameraHardware()
     )
     model.handlers.deliver = { photo in screen.photos.append(photo) }
     model.handlers.failureAction = { failure in screen.failures.append(failure) }

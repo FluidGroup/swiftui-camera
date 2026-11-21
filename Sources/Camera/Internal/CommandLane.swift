@@ -35,7 +35,7 @@ struct DeviceIntent: Sendable, Hashable {
 }
 
 enum LaneCommand: Sendable {
-  case start
+  case start(CameraRequest)
   case stop
   case reconcile
   case capturePhoto(PhotoRequest)

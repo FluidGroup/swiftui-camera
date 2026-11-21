@@ -163,10 +163,16 @@ exposure, Camera Control, interruptions, and the preview's rotation and frame ra
 Check those on an
 iPhone with the demo app in `Development` after changing them.
 
-## Why photos only
+## Photo and video sessions
 
-Video roughly doubled the design: a sample-buffer writer on the session queue, format and color
-space selection, audio, and recording states in the shutter. Without it, every capture is one
-`Photo` type, so `onPhotoCapture` has one signature and the session actor stays internal. Adding video later
-is mostly additive. The exception is `ShutterState.Phase`: new recording cases would break apps
-that switch on it exhaustively.
+`Camera` and `VideoCamera` configure separate capture sessions. Both request exclusive
+hardware use on `CaptureActor`. Requests are ordered by view appearance, including time spent
+waiting for permission. A newer view waits for in-flight photos or a movie writer to finish.
+The previous owner stops and disconnects its inputs and outputs before the next owner starts.
+Dismissing a waiting view cancels its request. Dismissing the newest view restores the most
+recent requester still on screen. Simulated cameras use the same policy with a separate arbiter.
+
+`VideoEngine` consumes begin, end and session interruption events in order. It keeps the
+hardware until `AVAssetWriter` finishes. The main actor delivers the cached movie to the
+consumer independently of the next hardware owner. Muted configurations omit microphone
+authorization, audio capture and the writer's audio input.

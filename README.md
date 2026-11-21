@@ -39,6 +39,38 @@ struct CaptureScreen: View {
 }
 ```
 
+## Record video
+
+`VideoCamera` delivers one HEVC movie per hold. The touch shutter, hardware capture buttons
+on iOS, and accessibility activation use the same recording state.
+
+```swift
+VideoCamera(microphoneEnabled: false, minimumDuration: 0.5) { camera in
+  ZStack(alignment: .bottom) {
+    VideoCameraPreview(camera)
+    RecordButton(camera) { state in
+      Circle()
+        .fill(state == .idle ? Color.white : Color.red)
+        .frame(width: 72, height: 72)
+    }
+  }
+}
+.onVideoCapture { video in
+  await saveMovie(video.file.url, profile: video.profile)
+}
+```
+
+Retain `video.file` for as long as another task needs its URL. On supported iPhones the
+writer prefers Apple Log 2, then Apple Log, and delivers the selected profile with the file.
+Muted capture skips microphone permission and leaves the application's audio session alone.
+To capture sound, supply `NSMicrophoneUsageDescription` and set `microphoneEnabled` to
+`true`. Denied access produces silent movies. Changes take effect between clips.
+Use `onMicrophoneRelease` if the host needs to restore a playback category.
+
+Photo and video views share the camera. A view waiting for another in-app capture receives
+`.available(.interrupted(.inUseByAnotherCamera))`. Closing the top camera lets the preceding
+visible camera resume once its hardware is free.
+
 ## Requirements
 
 - iOS 18 or later, or macOS 26 or later

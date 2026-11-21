@@ -7,6 +7,7 @@ import Testing
 
 @testable import Camera
 
+@Suite(.serialized)
 @MainActor
 struct CameraViewTests {
   @MainActor
