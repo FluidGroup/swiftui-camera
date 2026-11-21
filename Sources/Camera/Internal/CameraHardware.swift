@@ -4,11 +4,35 @@ import Synchronization
 /// queue can see cancellation even while it is draining another client's writer.
 final class CameraRequest: Sendable {
   let time = ContinuousClock.now
-  private let cancelled = Mutex(false)
+  private struct State {
+    var isCancelled = false
+    var accepting = false
+    var queued = 0
+  }
+  private let state = Mutex(State())
 
-  var isCancelled: Bool { cancelled.withLock { $0 } }
+  var isCancelled: Bool { state.withLock { $0.isCancelled } }
+  func cancel() { state.withLock { $0.isCancelled = true } }
 
-  func cancel() { cancelled.withLock { $0 = true } }
+  /// A press and a handoff can race on different executors. Once accepted, a
+  /// command keeps its session through submission, even if the view disappears.
+  func reserveCapture() -> Bool {
+    state.withLock {
+      guard $0.accepting && !$0.isCancelled else { return false }
+      $0.queued += 1
+      return true
+    }
+  }
+
+  @CaptureActor func didSubmitCapture() { state.withLock { $0.queued -= 1 } }
+
+  @CaptureActor @discardableResult
+  func setAccepting(_ accepting: Bool) -> Bool {
+    state.withLock {
+      $0.accepting = accepting
+      return $0.queued == 0
+    }
+  }
 }
 
 /// The latest visible client may configure the hardware once the previous client
@@ -28,17 +52,18 @@ final class CameraHardware {
 
   nonisolated init() {}
 
-  private var requests: [(client: any CameraHardwareClient, request: CameraRequest)] = []
-  private var owner: (any CameraHardwareClient)?
+  private typealias Entry = (client: any CameraHardwareClient, request: CameraRequest)
+  private var requests: [Entry] = []
+  private var owner: Entry?
 
   func request(_ client: any CameraHardwareClient, _ request: CameraRequest = CameraRequest()) {
     guard !request.isCancelled, !requests.contains(where: { $0.client === client }) else { return }
     requests.append((client, request))
     requests.sort { $0.request.time < $1.request.time }
-    if requests.last?.client !== client || owner?.hasCaptureInFlight == true {
+    reconcile()
+    if owner?.request !== request, requests.contains(where: { $0.request === request }) {
       client.waitingForHardware()
     }
-    reconcile()
   }
 
   func withdraw(_ client: any CameraHardwareClient) {
@@ -46,25 +71,26 @@ final class CameraHardware {
     reconcile()
   }
 
-  func canCapture(_ client: any CameraHardwareClient) -> Bool {
-    owner === client && requests.last?.client === client
-      && requests.last?.request.isCancelled == false
-  }
-
   /// Start/stop do not suspend. Clients call back here after the last photo or
   /// movie writer finishes, including cancellation and failure paths.
   func reconcile() {
     requests.removeAll { $0.request.isCancelled }
-    guard owner !== requests.last?.client, owner?.hasCaptureInFlight != true else { return }
     if let owner {
-      owner.stopHardware(waiting: requests.contains { $0.client === owner })
+      if owner.request === requests.last?.request {
+        owner.request.setAccepting(true)
+        return
+      }
+      guard owner.request.setAccepting(false), !owner.client.hasCaptureInFlight else { return }
+      owner.client.stopHardware(waiting: requests.contains { $0.client === owner.client })
       self.owner = nil
     }
     while let next = requests.last {
+      next.request.setAccepting(true)
       if !next.request.isCancelled, next.client.startHardware() {
-        owner = next.client
+        owner = next
         return
       }
+      next.request.setAccepting(false)
       requests.removeLast()
     }
   }

@@ -38,7 +38,7 @@ enum LaneCommand: Sendable {
   case start(CameraRequest)
   case stop
   case reconcile
-  case capturePhoto(PhotoRequest)
+  case capturePhoto(PhotoRequest, CameraRequest)
 }
 
 struct PhotoShot: Sendable, Hashable {

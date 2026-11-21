@@ -53,7 +53,10 @@ final class CameraEngine: CameraBackend, CameraHardwareClient {
       case .reconcile:
         await settleCapturesBeforeLensSwitch()
         reconcile(full: false)
-      case .capturePhoto(let request): capture(request)
+      case .capturePhoto(let request, let reservation):
+        capture(request)
+        reservation.didSubmitCapture()
+        CameraHardware.shared.reconcile()
       }
     }
     CameraHardware.shared.withdraw(self)
@@ -275,7 +278,7 @@ final class CameraEngine: CameraBackend, CameraHardwareClient {
   }
 
   private func capture(_ request: PhotoRequest) {
-    guard CameraHardware.shared.canCapture(self), let rig, let connection = rig.connection, let camera else {
+    guard let rig, let connection = rig.connection, let camera else {
       couldNotStart(request, "The camera has not finished starting.")
       return
     }

@@ -115,6 +115,7 @@ public final class VideoCameraProxy {
   private var press: Press?
   private var commands: AsyncStream<VideoCommand>.Continuation?
   private var currentRun: UUID?
+  private var request: CameraRequest?
   private var canRecord = false
 
   init() {}
@@ -123,7 +124,8 @@ public final class VideoCameraProxy {
   public func stopRecording() { end(.control) }
 
   func begin(_ source: Press) {
-    guard canRecord, status == .available(.running), recordingState == .idle, let commands else {
+    guard canRecord, status == .available(.running), recordingState == .idle, let commands,
+      request?.reserveCapture() == true else {
       return
     }
     press = source
@@ -145,6 +147,7 @@ public final class VideoCameraProxy {
     audioDidEnd: @escaping @Sendable () -> Void
   ) async {
     let request = CameraRequest()
+    self.request = request
     let id = UUID()
     currentRun = id
     status = .available(.starting)

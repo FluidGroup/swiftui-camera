@@ -484,6 +484,7 @@ extension CameraModel {
       report(CameraFailure(kind: .photoCapture, message: "The camera has no connected lens to capture with.", snapshot: snapshot))
       return
     }
+    guard let hardwareRequest, hardwareRequest.reserveCapture() else { return }
     let settings = settings
     let lens = resolvedLens
     let shot = PhotoShot(
@@ -500,7 +501,7 @@ extension CameraModel {
     let request = PhotoRequest(settings: photoSettings, shot: shot, snapshot: snapshot)
     readinessTracker.startTracking(request)
     photosInFlight += 1
-    lane.send(.capturePhoto(request))
+    lane.send(.capturePhoto(request, hardwareRequest))
   }
 
   private var snapshot: CameraFailure.Snapshot {

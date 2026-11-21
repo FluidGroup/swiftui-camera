@@ -60,8 +60,12 @@ final class VideoEngine: CameraHardwareClient {
     for await command in stream {
       switch command {
       case .begin:
+        defer {
+          request.didSubmitCapture()
+          hardware.reconcile()
+        }
         do {
-          guard hardware.canCapture(self), !interrupted, let recorder else {
+          guard !interrupted, let recorder else {
             events.yield(.finished(nil))
             continue
           }

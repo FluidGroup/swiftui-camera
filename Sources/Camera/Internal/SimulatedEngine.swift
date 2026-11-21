@@ -46,7 +46,10 @@ final class SimulatedEngine: CameraBackend, CameraHardwareClient {
       case .start(let request): hardware.request(self, request)
       case .stop: hardware.withdraw(self)
       case .reconcile: reconcile(full: false)
-      case .capturePhoto(let request): capture(request)
+      case .capturePhoto(let request, let reservation):
+        capture(request)
+        reservation.didSubmitCapture()
+        hardware.reconcile()
       }
     }
     hardware.withdraw(self)
@@ -164,7 +167,7 @@ final class SimulatedEngine: CameraBackend, CameraHardwareClient {
   }
 
   private func capture(_ request: PhotoRequest) {
-    guard hardware.canCapture(self), let camera, let connected else {
+    guard let camera, let connected else {
       Task { @MainActor [camera] in
         camera?.captureCouldNotStart(trackedID: request.trackedID, message: "The camera is not running.", snapshot: request.snapshot)
       }

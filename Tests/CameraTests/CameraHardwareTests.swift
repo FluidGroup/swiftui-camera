@@ -49,12 +49,32 @@ struct CameraHardwareTests {
     hardware.request(latest)
     hardware.withdraw(removed)
     #expect(first.running && latest.waiting && latest.starts == 0)
-    #expect(!hardware.canCapture(first))
+    #expect(latest.waiting)
     first.hasCaptureInFlight = false
     hardware.reconcile()
     #expect(!first.running && first.waiting && latest.running)
     hardware.withdraw(latest)
     #expect(first.running && removed.starts == 0)
+  }
+
+  @Test func anAcceptedPressOutlivesDismissalUntilSubmitted() {
+    let hardware = CameraHardware()
+    let photo = Client()
+    let video = Client()
+    let request = CameraRequest()
+    hardware.request(photo, request)
+    #expect(request.reserveCapture())
+    request.cancel()
+    hardware.request(video)
+    #expect(photo.running && video.waiting)
+    #expect(!request.reserveCapture())
+    photo.hasCaptureInFlight = true
+    request.didSubmitCapture()
+    hardware.reconcile()
+    #expect(photo.running)
+    photo.hasCaptureInFlight = false
+    hardware.reconcile()
+    #expect(video.running && !photo.running)
   }
 
   @Test func failureRestoresThePreviousOwner() {
@@ -64,6 +84,6 @@ struct CameraHardwareTests {
     failed.canStart = false
     hardware.request(first)
     hardware.request(failed)
-    #expect(first.starts == 2 && hardware.canCapture(first))
+    #expect(first.starts == 2 && first.running)
   }
 }
