@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import AVKit
 import SwiftUI
+import Synchronization
 
 public struct Video: Sendable {
   /// Retain the token for as long as a save, editor or export reads the movie.
@@ -63,6 +64,15 @@ public struct VideoCamera<Content: View>: View {
   }
 }
 
+/// SwiftUI supplies fresh actions on each render. Microphone release reads its
+/// action synchronously on the capture queue before the next owner starts.
+struct VideoOptions: Sendable {
+  var minimumDuration: TimeInterval = 0
+  var deliver: (@MainActor (Video) async -> Void)?
+  var failure: (@MainActor (String) -> Void)?
+  var audioDidEnd: @Sendable () -> Void = {}
+}
+
 private struct VideoSession<Content: View>: View {
   let source: CameraSource
   let microphoneEnabled: Bool
@@ -76,11 +86,13 @@ private struct VideoSession<Content: View>: View {
 
   var body: some View {
     let enabled = appliedMicrophone ?? microphoneEnabled
-    ZStack { content(camera) }
+    camera.update(
+      .init(
+        minimumDuration: minimumDuration, deliver: deliver,
+        failure: failure, audioDidEnd: audioDidEnd))
+    return ZStack { content(camera) }
       .task(id: enabled) {
-        await camera.run(
-          source: source, microphoneEnabled: enabled, minimumDuration: minimumDuration,
-          deliver: deliver, failure: failure, audioDidEnd: audioDidEnd)
+        await camera.run(source: source, microphoneEnabled: enabled)
       }
       .onChange(of: microphoneEnabled, initial: true) { updateMicrophone() }
       .onChange(of: camera.recordingState) { updateMicrophone() }
@@ -116,7 +128,11 @@ public final class VideoCameraProxy {
   private var commands: AsyncStream<VideoCommand>.Continuation?
   private var currentRun: UUID?
   private var request: CameraRequest?
-  private var canRecord = false
+  private let options = Mutex(VideoOptions())
+
+  func update(_ options: VideoOptions) {
+    self.options.withLock { $0 = options }
+  }
 
   init() {}
 
@@ -124,13 +140,16 @@ public final class VideoCameraProxy {
   public func stopRecording() { end(.control) }
 
   func begin(_ source: Press) {
-    guard canRecord, status == .available(.running), recordingState == .idle, let commands,
-      request?.reserveCapture() == true else {
+    let options = options.withLock { $0 }
+    guard options.deliver != nil, status == .available(.running), recordingState == .idle,
+      let commands,
+      request?.reserveCapture() == true
+    else {
       return
     }
     press = source
     recordingState = .recording(startedAt: .now)
-    commands.yield(.begin)
+    commands.yield(.begin(minimumDuration: options.minimumDuration))
   }
 
   func end(_ source: Press) {
@@ -142,9 +161,7 @@ public final class VideoCameraProxy {
 
   func run(
     source: CameraSource, simulationHardware: CameraHardware = .simulated,
-    microphoneEnabled requested: Bool, minimumDuration: TimeInterval,
-    deliver: (@MainActor (Video) async -> Void)?, failure: (@MainActor (String) -> Void)?,
-    audioDidEnd: @escaping @Sendable () -> Void
+    microphoneEnabled requested: Bool
   ) async {
     let request = CameraRequest()
     self.request = request
@@ -155,7 +172,6 @@ public final class VideoCameraProxy {
     microphoneEnabled = false
     press = nil
     preview = nil
-    canRecord = deliver != nil
     let simulated = !BackendKind.select(source).needsAuthorization
     var includesAudio = false
     if !simulated {
@@ -171,11 +187,15 @@ public final class VideoCameraProxy {
     let (stream, input) = AsyncStream<VideoCommand>.makeStream()
     let (events, sink) = AsyncStream<VideoEvent>.makeStream()
     commands = input
-    let engine = Task { @CaptureActor [frames, includesAudio] in
+    let engine = Task { @CaptureActor [frames, includesAudio, self] in
       let engine = VideoEngine(
         hardware: simulated ? simulationHardware : .shared, simulated: simulated,
-        includesAudio: includesAudio, minimumDuration: minimumDuration, frames: frames,
-        events: sink, commands: input, audioDidEnd: audioDidEnd)
+        includesAudio: includesAudio, frames: frames,
+        events: sink, commands: input,
+        audioDidEnd: {
+          let release = self.options.withLock { $0.audioDidEnd }
+          release()
+        })
       await engine.drain(stream, request: request)
     }
     // Delivery survives view cancellation. A replaced run still delivers its
@@ -184,12 +204,14 @@ public final class VideoCameraProxy {
       for await event in events {
         switch event {
         case .finished(let video):
-          if let video { await deliver?(video) }
+          if let video, let deliver = options.withLock({ $0.deliver }) { await deliver(video) }
           if currentRun == id {
             recordingState = .idle
             press = nil
           }
-        case .failure(let message): failure?(message)
+        case .failure(let message):
+          let failure = options.withLock { $0.failure }
+          failure?(message)
         case .status(let value) where currentRun == id:
           status = value
           if value != .available(.running) { preview = nil }

@@ -12,12 +12,17 @@ struct VideoCameraTests {
     var movies: [Video] = []
     let videoRun = Task {
       await video.run(
-        source: .simulated(.init()), simulationHardware: hardware, microphoneEnabled: false,
-        minimumDuration: 0.5, deliver: { movies.append($0) },
-        failure: { Issue.record("Recording failed: \($0)") }, audioDidEnd: {})
+        source: .simulated(.init()), simulationHardware: hardware, microphoneEnabled: false)
     }
     defer { videoRun.cancel() }
     try await wait { video.status == .available(.running) }
+    // Installing a delivery closure after the session starts enables capture.
+    video.startRecording()
+    #expect(video.recordingState == .idle)
+    video.update(
+      .init(
+        minimumDuration: 0.5, deliver: { _ in Issue.record("Stale delivery") },
+        failure: { Issue.record("Recording failed: \($0)") }))
     video.startRecording()
     video.stopRecording()
     try await wait { video.recordingState == .idle }
@@ -25,6 +30,12 @@ struct VideoCameraTests {
     video.startRecording()
     try await Task.sleep(for: .seconds(1.2))
 
+    // A render during the hold changes the recipient. This clip keeps the
+    // duration policy from touch-down.
+    video.update(
+      .init(
+        minimumDuration: 60, deliver: { movies.append($0) },
+        failure: { Issue.record("Recording failed: \($0)") }))
     let photo = CameraModel(
       configuration: .init(
         photo: .heif, lensSelection: .wide, mirroring: .matchesPreview, cameraControl: []),

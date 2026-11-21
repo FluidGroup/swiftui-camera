@@ -9,7 +9,8 @@ struct VideoPreviewSource: @unchecked Sendable {
 }
 
 enum VideoCommand: Sendable {
-  case begin, end
+  case begin(minimumDuration: TimeInterval)
+  case end
   case interrupted(UUID, CameraStatus.Interruption)
   case resumed(UUID)
   case runtimeError(UUID, String)
@@ -28,7 +29,7 @@ final class VideoEngine: CameraHardwareClient {
   private let hardware: CameraHardware
   private let simulated: Bool
   private let includesAudio: Bool
-  private let minimumDuration: TimeInterval
+  private var minimumDuration: TimeInterval = 0
   private let frames: PreviewFrames
   private let events: AsyncStream<VideoEvent>.Continuation
   private let commands: AsyncStream<VideoCommand>.Continuation
@@ -41,14 +42,13 @@ final class VideoEngine: CameraHardwareClient {
   private(set) var hasCaptureInFlight = false
 
   init(
-    hardware: CameraHardware, simulated: Bool, includesAudio: Bool, minimumDuration: TimeInterval,
+    hardware: CameraHardware, simulated: Bool, includesAudio: Bool,
     frames: PreviewFrames, events: AsyncStream<VideoEvent>.Continuation,
     commands: AsyncStream<VideoCommand>.Continuation, audioDidEnd: @escaping @Sendable () -> Void
   ) {
     self.hardware = hardware
     self.simulated = simulated
     self.includesAudio = includesAudio
-    self.minimumDuration = minimumDuration
     self.frames = frames
     self.events = events
     self.commands = commands
@@ -59,7 +59,7 @@ final class VideoEngine: CameraHardwareClient {
     hardware.request(self, request)
     for await command in stream {
       switch command {
-      case .begin:
+      case .begin(let minimumDuration):
         defer {
           request.didSubmitCapture()
           hardware.reconcile()
@@ -70,6 +70,7 @@ final class VideoEngine: CameraHardwareClient {
             continue
           }
           try recorder.startRecording()
+          self.minimumDuration = minimumDuration
           hasCaptureInFlight = true
         } catch {
           events.yield(.failure(error.localizedDescription))
@@ -87,6 +88,7 @@ final class VideoEngine: CameraHardwareClient {
           publishReady(recorder)
         }
       case .runtimeError(let id, let message) where id == generation:
+        interrupted = true
         hardware.withdraw(self)
         await finishRecording()
         events.yield(.status(.unavailable(.configurationFailed(message))))
