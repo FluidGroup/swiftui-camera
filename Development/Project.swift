@@ -28,6 +28,7 @@ let project = Project(
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationCategoryType": "public.app-category.developer-tools",
         "NSCameraUsageDescription": "The demo uses the camera to try the Camera library.",
+        "NSMicrophoneUsageDescription": "Record sound with your video when you turn on the microphone.",
         "UILaunchScreen": .dictionary([:]),
       ]),
       buildableFolders: ["Sources"],
@@ -41,6 +42,7 @@ let project = Project(
           "ENABLE_APP_SANDBOX": "YES",
           "ENABLE_HARDENED_RUNTIME": "YES",
           "ENABLE_RESOURCE_ACCESS_CAMERA[sdk=macosx*]": "YES",
+          "ENABLE_RESOURCE_ACCESS_AUDIO_INPUT[sdk=macosx*]": "YES",
         ]
       )
     )

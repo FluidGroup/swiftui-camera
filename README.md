@@ -443,6 +443,10 @@ simulated camera in the Simulator and in previews.
 screen and a pro screen with manual controls, lens switching, and settings that persist across
 launches. In the Simulator it runs on the simulated camera, and a toolbar menu switches the source.
 
+Open **Video**, hold the red record button, then release and choose **Play Last Clip**.
+Clips start muted. On hardware, turn on **Microphone** between clips to record sound.
+The simulated source records the moving test pattern without audio.
+
 `mise.toml` pins the Tuist version. Install it with [mise](https://mise.jdx.dev), then generate
 the workspace from `Development`:
 

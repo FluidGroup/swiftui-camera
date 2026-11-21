@@ -3,12 +3,14 @@ import SwiftUI
 
 private enum Demo: Hashable, CaseIterable {
   case simple
+  case video
   case pro
   case components
 
   var title: String {
     switch self {
     case .simple: "Simple"
+    case .video: "Video"
     case .pro: "Pro"
     case .components: "Components"
     }
@@ -68,6 +70,7 @@ private struct DemoScreen: View {
   private var screen: some View {
     switch demo {
     case .simple: SimpleCameraScreen()
+    case .video: VideoCameraScreen()
     case .pro: ProCameraScreen()
     case .components: ComponentGalleryScreen()
     }
