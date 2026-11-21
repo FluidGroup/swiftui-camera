@@ -145,8 +145,11 @@ extension CameraEngine {
     sliders.iso?.sync(Float(intent.exposure.isoTarget?.rawValue ?? Double(device.iso)))
     sliders.shutterSpeed?.sync(Float(intent.exposure.shutterSpeedTarget?.rawValue ?? device.exposureDuration.seconds))
     if let slider = sliders.whiteBalance {
-      let temperature: Float? =
-        if case .locked(let temperature, _) = intent.whiteBalance { Float(temperature.rawValue) } else { Self.temperature(of: device) }
+      let temperature: Float? = if case .locked(let temperature, _) = intent.whiteBalance {
+        Float(temperature.rawValue)
+      } else {
+        device.readWhiteBalanceTemperatureAndTint()?.temperature
+      }
       if let temperature {
         slider.sync(temperature)
       }
@@ -167,12 +170,6 @@ extension CameraEngine {
   func syncControlsWithDevice() {
     guard let connection = rig?.connection else { return }
     syncControls(with: deviceIntent, connection: connection)
-  }
-
-  private static func temperature(of device: AVCaptureDevice) -> Float? {
-    let gains = device.deviceWhiteBalanceGains
-    guard gains.redGain > 0, gains.greenGain > 0, gains.blueGain > 0 else { return nil }
-    return device.temperatureAndTintValues(for: gains).temperature
   }
   #endif
 

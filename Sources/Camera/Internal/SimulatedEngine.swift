@@ -1,7 +1,7 @@
 import Foundation
 
 @CaptureActor
-final class SimulatedEngine: CameraBackend {
+final class SimulatedEngine: CameraBackend, CameraHardwareClient {
   private let simulation: CameraSimulation
   private let configuration: EngineConfiguration
   private let intentBox: IntentBox
@@ -19,10 +19,12 @@ final class SimulatedEngine: CameraBackend {
   private var subjectAreaTimer: Task<Void, Never>?
   private var isRunning = false
   private var photosInFlight = 0
-  private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+  var hasCaptureInFlight: Bool { photosInFlight > 0 }
+  private let hardware: CameraHardware
 
   nonisolated init(
     simulation: CameraSimulation,
+    hardware: CameraHardware,
     camera: CameraModel,
     configuration: EngineConfiguration,
     intentBox: IntentBox,
@@ -30,6 +32,7 @@ final class SimulatedEngine: CameraBackend {
     events: AsyncStream<EngineEvent>.Continuation
   ) {
     self.simulation = simulation
+    self.hardware = hardware
     self.camera = camera
     self.configuration = configuration
     self.intentBox = intentBox
@@ -40,25 +43,30 @@ final class SimulatedEngine: CameraBackend {
   func drain(_ commands: AsyncStream<LaneCommand>) async {
     for await command in commands {
       switch command {
-      case .start: start()
-      case .stop: await stop()
+      case .start(let request): hardware.request(self, request)
+      case .stop: hardware.withdraw(self)
       case .reconcile: reconcile(full: false)
-      case .capturePhoto(let request): capture(request)
+      case .capturePhoto(let request, let reservation):
+        capture(request)
+        reservation.didSubmitCapture()
+        hardware.reconcile()
       }
     }
-    readingsLoop?.cancel()
-    frameLoop?.cancel()
-    subjectAreaTimer?.cancel()
+    hardware.withdraw(self)
   }
 
-  private func start() {
+  func waitingForHardware() {
+    events.yield(.status(.available(.interrupted(.inUseByAnotherCamera))))
+  }
+
+  func startHardware() -> Bool {
     if lenses.isEmpty {
       lenses = SimulatedDevice.lenses(for: simulation, selection: configuration.lensSelection)
       CapturedFileStore.sweepOrphans()
     }
     guard !lenses.isEmpty else {
       events.yield(.status(.unavailable(.noCamera)))
-      return
+      return false
     }
     if let camera {
       events.yield(.readinessTracker(SimulatedReadinessTracker(camera: camera)))
@@ -70,13 +78,10 @@ final class SimulatedEngine: CameraBackend {
     events.yield(.readiness(.ready))
     startReadingsLoop()
     startFrameLoop()
+    return true
   }
 
-  private func stop() async {
-    guard isRunning else { return }
-    while photosInFlight > 0 {
-      await withCheckedContinuation { stopWaiters.append($0) }
-    }
+  func stopHardware(waiting: Bool) {
     isRunning = false
     readingsLoop?.cancel()
     readingsLoop = nil
@@ -84,7 +89,8 @@ final class SimulatedEngine: CameraBackend {
     frameLoop = nil
     subjectAreaTimer?.cancel()
     events.yield(.readiness(.unavailable))
-    events.yield(.status(.available(.stopped)))
+    if waiting { waitingForHardware() }
+    else { events.yield(.status(.available(.stopped))) }
   }
 
   private func reconcile(full: Bool) {
@@ -161,7 +167,7 @@ final class SimulatedEngine: CameraBackend {
   }
 
   private func capture(_ request: PhotoRequest) {
-    guard isRunning, let camera, let connected else {
+    guard let camera, let connected else {
       Task { @MainActor [camera] in
         camera?.captureCouldNotStart(trackedID: request.trackedID, message: "The camera is not running.", snapshot: request.snapshot)
       }
@@ -189,11 +195,7 @@ final class SimulatedEngine: CameraBackend {
     photosInFlight -= 1
     if photosInFlight == 0 {
       events.yield(.readiness(isRunning ? .ready : .unavailable))
-      let waiters = stopWaiters
-      stopWaiters = []
-      for waiter in waiters {
-        waiter.resume()
-      }
+      hardware.reconcile()
     }
   }
 }

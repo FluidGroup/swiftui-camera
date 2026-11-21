@@ -6,7 +6,7 @@ import Testing
 struct CommandLaneTests {
   @Test func commandsArriveInTheOrderTheyWereSent() async {
     let lane = CommandLane(intent: DeviceIntent(position: .back))
-    lane.send(.start)
+    lane.send(.start(CameraRequest()))
     lane.updateIntent { $0.zoom = ZoomFactor(2) }
     lane.send(.stop)
 
@@ -38,7 +38,7 @@ struct CommandLaneTests {
   @Test func theStreamEndsWhenTheLaneGoesAway() async {
     var lane: CommandLane? = CommandLane(intent: DeviceIntent(position: .back))
     let commands = lane!.commands
-    lane?.send(.start)
+    lane?.send(.start(CameraRequest()))
     lane = nil
 
     var iterator = commands.makeAsyncIterator()

@@ -1,7 +1,7 @@
 import AVFoundation
 
 @CaptureActor
-final class CameraEngine: CameraBackend {
+final class CameraEngine: CameraBackend, CameraHardwareClient {
   let configuration: EngineConfiguration
   let events: AsyncStream<EngineEvent>.Continuation
   let frames: PreviewFrames
@@ -23,7 +23,7 @@ final class CameraEngine: CameraBackend {
   /// Delegates must stay alive until their request finishes.
   private var inFlight: [Int64: PhotoCaptureDelegate] = [:]
   private var awaitingCapture: Set<Int64> = []
-  private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+  var hasCaptureInFlight: Bool { !inFlight.isEmpty }
   private var captureWaiters: [CheckedContinuation<Void, Never>] = []
   private var observers: [any NSObjectProtocol] = []
 
@@ -48,15 +48,18 @@ final class CameraEngine: CameraBackend {
   func drain(_ commands: AsyncStream<LaneCommand>) async {
     for await command in commands {
       switch command {
-      case .start: start()
-      case .stop: await stop()
+      case .start(let request): CameraHardware.shared.request(self, request)
+      case .stop: CameraHardware.shared.withdraw(self)
       case .reconcile:
         await settleCapturesBeforeLensSwitch()
         reconcile(full: false)
-      case .capturePhoto(let request): capture(request)
+      case .capturePhoto(let request, let reservation):
+        capture(request)
+        reservation.didSubmitCapture()
+        CameraHardware.shared.reconcile()
       }
     }
-    tearDown()
+    CameraHardware.shared.withdraw(self)
   }
 
   /// Reconfiguring the session can fail a request still waiting for its exposure, so a lens
@@ -69,7 +72,11 @@ final class CameraEngine: CameraBackend {
     }
   }
 
-  private func start() {
+  func waitingForHardware() {
+    events.yield(.status(.available(.interrupted(.inUseByAnotherCamera))))
+  }
+
+  func startHardware() -> Bool {
     isStarted = true
     if rig == nil {
       CapturedFileStore.sweepOrphans()
@@ -78,15 +85,21 @@ final class CameraEngine: CameraBackend {
       } catch {
         isStarted = false
         events.yield(.status(.unavailable(error.unavailableReason)))
-        return
+        return false
       }
     }
-    guard let rig else { return }
+    guard let rig else { return false }
     if !rig.session.isRunning {
       rig.session.startRunning()
     }
+    guard rig.session.isRunning || isInterrupted(rig.session) else {
+      stopHardware(waiting: false)
+      events.yield(.status(.unavailable(.configurationFailed("The camera did not start."))))
+      return false
+    }
     reconcile(full: true)
     events.yield(.status(.available(isInterrupted(rig.session) ? .interrupted(.other) : .running)))
+    return true
   }
 
   private func isInterrupted(_ session: AVCaptureSession) -> Bool {
@@ -97,18 +110,13 @@ final class CameraEngine: CameraBackend {
     #endif
   }
 
-  private func stop() async {
+  func stopHardware(waiting: Bool) {
     isStarted = false
-    guard let rig else { return }
-    while !inFlight.isEmpty {
-      await withCheckedContinuation { stopWaiters.append($0) }
-    }
-    if rig.session.isRunning {
-      rig.session.stopRunning()
-    }
+    tearDown()
     applied = nil
     steering = nil
-    events.yield(.status(.available(.stopped)))
+    if waiting { waitingForHardware() }
+    else { events.yield(.status(.available(.stopped))) }
   }
 
   private func tearDown() {
@@ -117,11 +125,14 @@ final class CameraEngine: CameraBackend {
     }
     observers = []
     guard let rig else { return }
-    disconnect(rig.connection, from: rig.session)
-    rig.connection = nil
     if rig.session.isRunning {
       rig.session.stopRunning()
     }
+    rig.session.beginConfiguration()
+    disconnect(rig.connection, from: rig.session)
+    for output in rig.session.outputs { rig.session.removeOutput(output) }
+    rig.session.commitConfiguration()
+    rig.connection = nil
     self.rig = nil
   }
 
@@ -267,7 +278,7 @@ final class CameraEngine: CameraBackend {
   }
 
   private func capture(_ request: PhotoRequest) {
-    guard isStarted, let rig, let connection = rig.connection, let camera else {
+    guard let rig, let connection = rig.connection, let camera else {
       couldNotStart(request, "The camera has not finished starting.")
       return
     }
@@ -329,7 +340,7 @@ final class CameraEngine: CameraBackend {
       Self.resume(&captureWaiters)
     }
     if inFlight.isEmpty {
-      Self.resume(&stopWaiters)
+      CameraHardware.shared.reconcile()
     }
   }
 

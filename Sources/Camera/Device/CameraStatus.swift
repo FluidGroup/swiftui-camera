@@ -21,6 +21,8 @@ public enum CameraStatus: Sendable, Hashable {
 
   public enum Interruption: Sendable, Hashable {
     case backgrounded
+    /// Another camera view in this process owns the capture hardware.
+    case inUseByAnotherCamera
     case inUseByAnotherApp
     case multitasking
     case systemPressure
