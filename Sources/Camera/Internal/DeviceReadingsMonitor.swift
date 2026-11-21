@@ -41,9 +41,9 @@ final class DeviceReadingsMonitor {
         coalescer.exposureOffsetChanged(offset)
       },
       device.observe(\.deviceWhiteBalanceGains, options: [.initial, .new]) { device, _ in
-        let gains = device.deviceWhiteBalanceGains
-        guard gains.redGain > 0, gains.greenGain > 0, gains.blueGain > 0 else { return }
-        let values = device.temperatureAndTintValues(for: gains)
+        guard let values = device.readWhiteBalanceTemperatureAndTint() else {
+          return
+        }
         coalescer.update {
           $0.temperature = Kelvin(Double(values.temperature))
           $0.tint = Tint(Double(values.tint))
@@ -66,6 +66,32 @@ final class DeviceReadingsMonitor {
     observations = []
   }
 }
+
+#if os(iOS)
+extension AVCaptureDevice {
+
+  /// Skips samples that would raise an AVFoundation range exception during conversion.
+  func readWhiteBalanceTemperatureAndTint() -> WhiteBalanceTemperatureAndTintValues? {
+    let maxGain = maxWhiteBalanceGain
+    guard maxGain.isFinite, maxGain >= 1 else {
+      return nil
+    }
+
+    let gains = deviceWhiteBalanceGains
+    let supportedGains = 1...maxGain
+    guard
+      supportedGains.contains(gains.redGain),
+      supportedGains.contains(gains.greenGain),
+      supportedGains.contains(gains.blueGain)
+    else {
+      return nil
+    }
+
+    return temperatureAndTintValues(for: gains)
+  }
+
+}
+#endif
 
 final class ReadingsCoalescer: Sendable {
   private struct State {
