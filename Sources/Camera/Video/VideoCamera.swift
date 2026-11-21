@@ -232,7 +232,9 @@ public final class VideoCameraProxy {
       await delivery.value
     } onCancel: {
       request.cancel()
-      input.finish()
+      // Reject new presses immediately. Close on the producer's actor so a
+      // press that already reserved the camera can enqueue its begin command.
+      Task { @MainActor in input.finish() }
     }
   }
 }

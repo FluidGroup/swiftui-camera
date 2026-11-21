@@ -6,6 +6,35 @@ import Testing
 
 @MainActor
 struct VideoCameraTests {
+  @Test func dismissalDuringTouchDownReleasesTheCamera() async throws {
+    let hardware = CameraHardware()
+    let video = VideoCameraProxy()
+    video.update(.init(deliver: { _ in }))
+    let run = Task {
+      await video.run(
+        source: .simulated(.init()), simulationHardware: hardware, microphoneEnabled: false)
+    }
+    defer { run.cancel() }
+    try await wait { video.status == .available(.running) }
+
+    // Dismiss synchronously when the press changes state, before begin returns.
+    withObservationTracking {
+      _ = video.recordingState
+    } onChange: {
+      run.cancel()
+    }
+    video.startRecording()
+    await run.value
+
+    let next = VideoCameraProxy()
+    let nextRun = Task {
+      await next.run(
+        source: .simulated(.init()), simulationHardware: hardware, microphoneEnabled: false)
+    }
+    defer { nextRun.cancel() }
+    try await wait { next.status == .available(.running) }
+  }
+
   @Test func handoffDeliversOneSilentMovieAndRestoresThePhotoCamera() async throws {
     let hardware = CameraHardware()
     let video = VideoCameraProxy()
