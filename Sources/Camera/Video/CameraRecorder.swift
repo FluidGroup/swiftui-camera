@@ -90,6 +90,7 @@ final class CameraRecorder {
   private var captureRotationCoordinator: AVCaptureDevice.RotationCoordinator?
   /// Kept alive here; the data outputs only point at it.
   private var sampleBufferRelay: SampleBufferRelay?
+  private var preparedRecording: MovieRecording?
   /// The movie being written, from shutter press until release.
   private var activeRecording: MovieRecording?
 
@@ -135,7 +136,7 @@ final class CameraRecorder {
       if let connection = videoDataOutput.connection(with: .video),
         connection.isVideoStabilizationSupported
       {
-        connection.preferredVideoStabilizationMode = .standard
+        connection.preferredVideoStabilizationMode = Self.stabilizationMode(for: videoDevice.activeFormat)
       }
     #endif
     captureRotationCoordinator = AVCaptureDevice.RotationCoordinator(
@@ -164,6 +165,7 @@ final class CameraRecorder {
 
   func stopRunning() {
     simulationTask?.cancel()
+    discardPreparedRecording()
     if session.isRunning { session.stopRunning() }
     session.beginConfiguration()
     for input in session.inputs { session.removeInput(input) }
@@ -194,61 +196,47 @@ final class CameraRecorder {
     if let sample { append(sample, from: videoDataOutput) }
   }
 
-  /// Starts writing a new movie file. Each recording is its own file, so one
-  /// hold of the shutter becomes one clip.
-  ///
-  /// The movie's timeline starts at the next video frame.
-  func startRecording() throws {
-    guard let profile, activeRecording == nil else { throw CameraRecorderError.cameraUnavailable }
-
-    let file = CapturedFile(url: try CapturedFileStore.makeURL(fileExtension: "mov"))
-    let writer = try AVAssetWriter(outputURL: file.url, fileType: .mov)
-
-    let dimensions = videoDevice?.activeFormat.formatDescription.dimensions ?? Self.simulationSize
-    let videoSettings = Self.makeVideoSettings(
-      dimensions: dimensions,
-      isTenBit: profile.tenBitPixelFormat != nil
-    )
-    guard writer.canApply(outputSettings: videoSettings, forMediaType: .video) else {
-      throw CameraRecorderError.hevcUnavailable
+  func prepareRecording() {
+    guard let profile, activeRecording == nil, preparedRecording == nil else {
+      return
     }
-    // Without AVVideoColorPropertiesKey the movie takes its color tags,
-    // including the Apple Log transfer function, from the camera's buffers.
-    let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-    videoInput.expectsMediaDataInRealTime = true
-    if let captureRotationCoordinator {
-      // The UI is portrait-only, but the movie plays back the way the phone
-      // was held.
-      videoInput.transform = Self.trackTransform(
-        rotationAngle: captureRotationCoordinator.videoRotationAngleForHorizonLevelCapture,
-        dimensions: dimensions
-      )
-    }
-    writer.add(videoInput)
 
-    var audioInput: AVAssetWriterInput?
-    if audioDataOutput.connection(with: .audio) != nil,
-      let audioSettings = audioDataOutput.recommendedAudioSettingsForAssetWriter(
-        writingTo: .mov
-      )
+    do {
+      preparedRecording = try makeRecording(profile: profile, settings: recordingSettings)
+    } catch {
+      logger.debug("Movie writer preparation failed: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  func discardPreparedRecording() {
+    if let preparedRecording, preparedRecording.writer.status == .writing {
+      preparedRecording.writer.cancelWriting()
+    }
+    preparedRecording = nil
+  }
+
+  /// Selects the writer matching the current orientation and audio format.
+  /// The first accepted video sample starts the movie timeline.
+  func startRecording(pressedAt: ContinuousClock.Instant) throws {
+    guard let profile, activeRecording == nil else {
+      throw CameraRecorderError.cameraUnavailable
+    }
+
+    let settings = recordingSettings
+    var recording: MovieRecording
+    if let preparedRecording,
+      preparedRecording.settings == settings,
+      preparedRecording.writer.status == .writing
     {
-      let input = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-      input.expectsMediaDataInRealTime = true
-      if writer.canAdd(input) {
-        writer.add(input)
-        audioInput = input
-      }
+      recording = preparedRecording
+      self.preparedRecording = nil
+    } else {
+      discardPreparedRecording()
+      recording = try makeRecording(profile: profile, settings: settings)
     }
 
-    guard writer.startWriting() else {
-      throw writer.error ?? CameraRecorderError.recordingFailed
-    }
-    activeRecording = MovieRecording(
-      file: file,
-      writer: writer,
-      videoInput: videoInput,
-      audioInput: audioInput
-    )
+    recording.pressedAt = pressedAt
+    activeRecording = recording
   }
 
   /// Stops the current recording and waits until its file is complete.
@@ -258,6 +246,9 @@ final class CameraRecorder {
   func stopRecording(minimumDuration: TimeInterval) async throws -> CapturedFile? {
     guard let recording = activeRecording else { return nil }
     activeRecording = nil
+    if recording.droppedVideoFrames > 0 {
+      logger.warning("The encoder dropped \(recording.droppedVideoFrames) video frames in this clip.")
+    }
 
     guard recording.writer.status == .writing else {
       logger.error(
@@ -302,14 +293,21 @@ final class CameraRecorder {
     let time = sampleBuffer.presentationTimeStamp
 
     if output === videoDataOutput {
+      guard recording.videoInput.isReadyForMoreMediaData else {
+        recording.droppedVideoFrames += 1
+        activeRecording = recording
+        return
+      }
       if recording.startTime == nil {
         recording.writer.startSession(atSourceTime: time)
         recording.startTime = time
       }
-      if recording.videoInput.isReadyForMoreMediaData {
-        if recording.videoInput.append(sampleBuffer) { recording.lastVideoTime = time }
-      } else {
-        logger.debug("Dropped a video frame because the encoder is busy.")
+      if recording.videoInput.append(sampleBuffer) {
+        if recording.lastVideoTime == nil, let pressedAt = recording.pressedAt {
+          let lag = pressedAt.duration(to: .now)
+          logger.debug("First video frame accepted \(String(describing: lag), privacy: .public) after the record command.")
+        }
+        recording.lastVideoTime = time
       }
     } else if let audioInput = recording.audioInput,
       let startTime = recording.startTime,
@@ -324,6 +322,61 @@ final class CameraRecorder {
   }
 
   // MARK: - Private
+
+  private var recordingSettings: MovieSettings {
+    let dimensions = videoDevice?.activeFormat.formatDescription.dimensions ?? Self.simulationSize
+    let angle = captureRotationCoordinator?.videoRotationAngleForHorizonLevelCapture ?? 0
+    let audioSettings: [String: Any]? = if hasAudio {
+      audioDataOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mov)
+    } else {
+      nil
+    }
+
+    return MovieSettings(
+      width: dimensions.width,
+      height: dimensions.height,
+      transform: Self.trackTransform(rotationAngle: angle, dimensions: dimensions),
+      audioSettings: audioSettings as NSDictionary?
+    )
+  }
+
+  private func makeRecording(
+    profile: VideoRecordingProfile,
+    settings: MovieSettings
+  ) throws -> MovieRecording {
+    let file = CapturedFile(url: try CapturedFileStore.makeURL(fileExtension: "mov"))
+    let writer = try AVAssetWriter(outputURL: file.url, fileType: .mov)
+    let videoSettings = Self.makeVideoSettings(
+      dimensions: CMVideoDimensions(width: settings.width, height: settings.height),
+      isTenBit: profile.tenBitPixelFormat != nil
+    )
+    guard writer.canApply(outputSettings: videoSettings, forMediaType: .video) else {
+      throw CameraRecorderError.hevcUnavailable
+    }
+    // Without AVVideoColorPropertiesKey the movie takes its color tags,
+    // including the Apple Log transfer function, from the camera's buffers.
+    let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+    videoInput.expectsMediaDataInRealTime = true
+    videoInput.transform = settings.transform
+    writer.add(videoInput)
+
+    var audioInput: AVAssetWriterInput?
+    if let audio = settings.audioSettings as? [String: Any] {
+      let input = AVAssetWriterInput(mediaType: .audio, outputSettings: audio)
+      input.expectsMediaDataInRealTime = true
+      if writer.canAdd(input) {
+        writer.add(input)
+        audioInput = input
+      }
+    }
+
+    guard writer.startWriting() else {
+      throw writer.error ?? CameraRecorderError.recordingFailed
+    }
+    return MovieRecording(
+      file: file, writer: writer, videoInput: videoInput, audioInput: audioInput, settings: settings
+    )
+  }
 
   /// Adds the inputs and the sample outputs in one configuration, which
   /// commits when this returns.
@@ -341,8 +394,8 @@ final class CameraRecorder {
     }
     session.addInput(videoInput)
 
-    // A recording keeps every frame; dropping late ones would leave gaps.
-    videoDataOutput.alwaysDiscardsLateVideoFrames = false
+    // Keep a busy encoder from building up a queue of stale camera frames.
+    videoDataOutput.alwaysDiscardsLateVideoFrames = true
     videoDataOutput.setSampleBufferDelegate(relay, queue: CaptureActor.shared.queue)
     guard session.canAddOutput(videoDataOutput) else {
       throw CameraRecorderError.cannotAddOutput
@@ -435,6 +488,7 @@ final class CameraRecorder {
     var compressionProperties: [String: Any] = [
       AVVideoAverageBitRateKey: Int(bitRate),
       AVVideoExpectedSourceFrameRateKey: recordingFrameRate,
+      AVVideoAllowFrameReorderingKey: false,
     ]
     if isTenBit {
       compressionProperties[AVVideoProfileLevelKey] =
@@ -476,6 +530,15 @@ final class CameraRecorder {
   }
 
   #if os(iOS)
+    private static func stabilizationMode(for format: AVCaptureDevice.Format) -> AVCaptureVideoStabilizationMode {
+      #if !targetEnvironment(macCatalyst)
+        if #available(iOS 26, *), format.isVideoStabilizationModeSupported(.lowLatency) {
+          return .lowLatency
+        }
+      #endif
+      return .standard
+    }
+
     /// Picks the largest format up to UHD that records at the camera frame
     /// rate in Apple Log 2, falling back to Apple Log.
     private static func preferredLogFormat(
@@ -510,15 +573,25 @@ final class CameraRecorder {
   #endif
 }
 
+private nonisolated struct MovieSettings: Equatable {
+  let width: Int32
+  let height: Int32
+  let transform: CGAffineTransform
+  let audioSettings: NSDictionary?
+}
+
 /// The writer state of one recording, owned by ``CameraRecorder``.
 private nonisolated struct MovieRecording {
   let file: CapturedFile
   let writer: AVAssetWriter
   let videoInput: AVAssetWriterInput
   let audioInput: AVAssetWriterInput?
+  let settings: MovieSettings
+  var pressedAt: ContinuousClock.Instant?
   /// The first video frame's time, where the movie's timeline starts.
   var startTime: CMTime?
   var lastVideoTime: CMTime?
+  var droppedVideoFrames = 0
 }
 
 /// Forwards camera samples to the recorder that owns the delegate queue.

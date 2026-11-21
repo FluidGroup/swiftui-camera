@@ -140,6 +140,7 @@ public final class VideoCameraProxy {
   public func stopRecording() { end(.control) }
 
   func begin(_ source: Press) {
+    let pressedAt = ContinuousClock.now
     let options = options.withLock { $0 }
     guard options.deliver != nil, status == .available(.running), recordingState == .idle,
       let commands,
@@ -149,7 +150,7 @@ public final class VideoCameraProxy {
     }
     press = source
     recordingState = .recording(startedAt: .now)
-    commands.yield(.begin(minimumDuration: options.minimumDuration))
+    commands.yield(.begin(minimumDuration: options.minimumDuration, pressedAt: pressedAt))
   }
 
   func end(_ source: Press) {

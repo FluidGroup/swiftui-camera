@@ -88,6 +88,38 @@ struct VideoCameraTests {
     #expect(try await asset.load(.duration).seconds >= 0.5)
   }
 
+  @Test func consecutiveTouchesDeliverSeparatePlayableMovies() async throws {
+    let hardware = CameraHardware()
+    let video = VideoCameraProxy()
+    var movies: [Video] = []
+    video.update(.init(
+      deliver: { movies.append($0) },
+      failure: { Issue.record("Recording failed: \($0)") }
+    ))
+    let run = Task {
+      await video.run(
+        source: .simulated(.init()), simulationHardware: hardware, microphoneEnabled: false)
+    }
+    defer { run.cancel() }
+    try await wait { video.status == .available(.running) }
+
+    for _ in 0..<2 {
+      video.begin(.touch)
+      try await Task.sleep(for: .milliseconds(500))
+      video.end(.touch)
+      video.end(.touch)
+      try await wait { video.recordingState == .idle }
+    }
+
+    #expect(movies.count == 2)
+    #expect(Set(movies.map(\.file.url)).count == 2)
+    for movie in movies {
+      let asset = AVURLAsset(url: movie.file.url)
+      #expect(try await asset.load(.duration).seconds > 0)
+      #expect(try await asset.loadTracks(withMediaType: .video).count == 1)
+    }
+  }
+
   private func wait(_ condition: () -> Bool) async throws {
     let timeout = ContinuousClock.now + .seconds(8)
     while !condition() {

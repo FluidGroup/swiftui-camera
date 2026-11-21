@@ -9,7 +9,7 @@ struct VideoPreviewSource: @unchecked Sendable {
 }
 
 enum VideoCommand: Sendable {
-  case begin(minimumDuration: TimeInterval)
+  case begin(minimumDuration: TimeInterval, pressedAt: ContinuousClock.Instant)
   case end
   case interrupted(UUID, CameraStatus.Interruption)
   case resumed(UUID)
@@ -59,7 +59,7 @@ final class VideoEngine: CameraHardwareClient {
     hardware.request(self, request)
     for await command in stream {
       switch command {
-      case .begin(let minimumDuration):
+      case .begin(let minimumDuration, let pressedAt):
         defer {
           request.didSubmitCapture()
           hardware.reconcile()
@@ -69,7 +69,7 @@ final class VideoEngine: CameraHardwareClient {
             events.yield(.finished(nil))
             continue
           }
-          try recorder.startRecording()
+          try recorder.startRecording(pressedAt: pressedAt)
           self.minimumDuration = minimumDuration
           hasCaptureInFlight = true
         } catch {
@@ -80,6 +80,7 @@ final class VideoEngine: CameraHardwareClient {
         await finishRecording()
       case .interrupted(let id, let reason) where id == generation:
         interrupted = true
+        recorder?.discardPreparedRecording()
         events.yield(.status(.available(.interrupted(reason))))
         await finishRecording()
       case .resumed(let id) where id == generation:
@@ -120,6 +121,7 @@ final class VideoEngine: CameraHardwareClient {
   }
 
   private func publishReady(_ recorder: CameraRecorder) {
+    recorder.prepareRecording()
     let preview = recorder.videoDevice.map {
       VideoPreviewSource(session: recorder.session, device: $0)
     }
@@ -152,6 +154,9 @@ final class VideoEngine: CameraHardwareClient {
     }
     hasCaptureInFlight = false
     hardware.reconcile()
+    if self.recorder === recorder, !interrupted {
+      recorder.prepareRecording()
+    }
   }
 
   private func observe(_ session: AVCaptureSession) {
