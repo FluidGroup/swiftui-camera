@@ -1,7 +1,10 @@
 import AVFoundation
 import ImageIO
+import os
 
 final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+  private static let logger = Logger(subsystem: "swiftui-camera", category: "PhotoCapture")
+
   private let shot: PhotoShot
   private let snapshot: CameraFailure.Snapshot
   private let uniqueID: Int64
@@ -72,11 +75,19 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 
   func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: (any Error)?) {
     let result: Result<Photo, CameraFailure>
-    if let error = error ?? processingError {
+    if let failure = error ?? processingError {
+      let phase = if error != nil { "capture" } else { "processing" }
+      let failureDetails = failure as NSError
+      let underlying = failureDetails.userInfo[NSUnderlyingErrorKey] as? NSError
+      let requestedSize = shot.dimensions.map { "\($0.width)×\($0.height)" } ?? "default"
+      let underlyingCode = underlying.map { "\($0.domain) \($0.code)" } ?? "none"
+      Self.logger.error(
+        "Photo \(self.uniqueID) failed during \(phase, privacy: .public) for \(self.shot.format.label, privacy: .public) \(requestedSize, privacy: .public): \(failureDetails.domain, privacy: .public) \(failureDetails.code), underlying \(underlyingCode, privacy: .public)."
+      )
       if let fileURL {
         try? FileManager.default.removeItem(at: fileURL)
       }
-      result = .failure(CameraFailure(kind: .photoCapture, error: error, snapshot: snapshot))
+      result = .failure(CameraFailure(kind: .photoCapture, error: failure, snapshot: snapshot))
     } else if let fileURL {
       result = .success(
         Photo(
