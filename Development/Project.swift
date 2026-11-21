@@ -41,6 +41,7 @@ let project = Project(
           "SWIFT_DEFAULT_ACTOR_ISOLATION": "MainActor",
           "ENABLE_APP_SANDBOX": "YES",
           "ENABLE_HARDENED_RUNTIME": "YES",
+          "ENABLE_USER_SELECTED_FILES[sdk=macosx*]": "readwrite",
           "ENABLE_RESOURCE_ACCESS_CAMERA[sdk=macosx*]": "YES",
           "ENABLE_RESOURCE_ACCESS_AUDIO_INPUT[sdk=macosx*]": "YES",
         ]

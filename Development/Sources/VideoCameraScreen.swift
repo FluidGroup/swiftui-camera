@@ -1,6 +1,8 @@
 import AVKit
 import Camera
+import CoreTransferable
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct VideoCameraScreen: View {
 
@@ -107,10 +109,44 @@ private struct ClipPlayback: View {
 
   let clip: Video
   @State private var player: AVPlayer?
+  @State private var showExporter = false
+  @State private var exportFailure: String?
 
   var body: some View {
-    VideoPlayer(player: player)
+    let movie = RecordedMovie(file: clip.file)
+
+    return playerView
       .navigationTitle("Last Clip")
+      .toolbar {
+        ToolbarItemGroup(placement: .primaryAction) {
+          Button("Save Clip", systemImage: "square.and.arrow.down") {
+            showExporter = true
+          }
+          ShareLink(item: movie, preview: SharePreview("Recorded Clip")) {
+            Label("Share Clip", systemImage: "square.and.arrow.up")
+          }
+        }
+      }
+      .fileExporter(
+        isPresented: $showExporter,
+        item: movie,
+        contentTypes: [.quickTimeMovie],
+        defaultFilename: RecordedMovie.filename,
+        onCompletion: { result in
+          if case .failure(let error) = result {
+            exportFailure = error.localizedDescription
+          }
+        }
+      )
+      .alert(
+        "Couldn’t Save Clip",
+        isPresented: Binding(get: { exportFailure != nil }, set: { if !$0 { exportFailure = nil } }),
+        presenting: exportFailure
+      ) { _ in
+        Button("OK") {}
+      } message: { message in
+        Text(message)
+      }
       .onAppear {
         player = AVPlayer(url: clip.file.url)
         player?.play()
@@ -119,6 +155,48 @@ private struct ClipPlayback: View {
         player?.pause()
       }
   }
+
+  private var playerView: some View {
+    #if os(macOS)
+      MacClipPlayer(player: player)
+    #else
+      VideoPlayer(player: player)
+    #endif
+  }
+}
+
+#if os(macOS)
+private struct MacClipPlayer: NSViewRepresentable {
+
+  let player: AVPlayer?
+
+  func makeNSView(context: Context) -> AVPlayerView {
+    let view = AVPlayerView()
+    view.showsSharingServiceButton = false
+    return view
+  }
+
+  func updateNSView(_ view: AVPlayerView, context: Context) {
+    if view.player !== player {
+      view.player = player
+    }
+  }
+
+}
+#endif
+
+private nonisolated struct RecordedMovie: Transferable {
+
+  static let filename = "CameraDemo Recording.mov"
+  let file: CapturedFile
+
+  static var transferRepresentation: some TransferRepresentation {
+    FileRepresentation(exportedContentType: .quickTimeMovie) { movie in
+      SentTransferredFile(movie.file.url)
+    }
+    .suggestedFileName(filename)
+  }
+
 }
 
 #Preview("Video, simulated camera") {
