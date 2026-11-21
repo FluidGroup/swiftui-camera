@@ -119,6 +119,7 @@ final class CameraRecorder {
     let relay = SampleBufferRelay(recorder: self)
     sampleBufferRelay = relay
     let profile = try connect(videoDevice, includesAudio: includesAudio, relay: relay)
+    try prepareAutomaticControls(on: videoDevice)
 
     // The data output's pixel formats follow the committed active format.
     if let pixelFormat = profile.tenBitPixelFormat {
@@ -365,6 +366,32 @@ final class CameraRecorder {
     #endif
     session.sessionPreset = session.canSetSessionPreset(.hd4K3840x2160) ? .hd4K3840x2160 : .high
     return .standard
+  }
+
+  /// The same physical device may still have a photo camera's manual controls.
+  /// Establish the movie defaults after committing the selected recording format.
+  private func prepareAutomaticControls(on device: AVCaptureDevice) throws {
+    try device.lockForConfiguration()
+    defer { device.unlockForConfiguration() }
+
+    let center = CGPoint(x: 0.5, y: 0.5)
+    if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = center }
+    if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+    if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = center }
+    if device.isExposureModeSupported(.continuousAutoExposure) {
+      device.exposureMode = .continuousAutoExposure
+    }
+    if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+      device.whiteBalanceMode = .continuousAutoWhiteBalance
+    }
+    #if os(iOS)
+      device.isSubjectAreaChangeMonitoringEnabled = false
+      device.videoZoomFactor = min(
+        max(1, device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
+      if device.exposureTargetBias != 0 {
+        device.setExposureTargetBias(0, completionHandler: nil)
+      }
+    #endif
   }
 
   /// - Returns: Whether the microphone is connected.
